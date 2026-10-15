@@ -36,6 +36,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tvseries.Movies.MoviesApp
+import com.tvseries.Movies.ads.AdPlacement
+import com.tvseries.Movies.ads.AdsProvider
+import androidx.compose.foundation.layout.fillMaxSize
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.TmdbError
@@ -97,6 +100,8 @@ private fun preset(axis: String, value: String) = Selection(include = mapOf(axis
 
 @Composable
 fun HomeScreen(
+    ads: AdsProvider,
+    onMood: () -> Unit,
     onOpen: (WorkCard) -> Unit,
     onSearch: () -> Unit,
     onFilter: (Selection?) -> Unit,
@@ -124,7 +129,8 @@ fun HomeScreen(
         Triple("العربية (لغة)", "Arabic (language)", preset(Axes.LANGUAGE, "language.ar")),
     )
 
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+    Column(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("🎬 Movies Selection", style = MaterialTheme.typography.headlineSmall)
@@ -132,6 +138,9 @@ fun HomeScreen(
                     Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(tr("ابحث عن فيلم أو مسلسل أو شخص", "Search a movie, series or person"))
+                }
+                OutlinedButton(onClick = onMood, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("🎭 اختر لي حسب مزاجي", "🎭 Pick for my mood"))
                 }
                 Button(onClick = { onFilter(null) }, modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -165,5 +174,7 @@ fun HomeScreen(
                 }
             }
         }
+    }
+    BannerSlot(ads, AdPlacement.HOME_BANNER)
     }
 }

@@ -15,7 +15,7 @@ class AppContainer(app: Application) {
     private val http = TmdbClient.buildHttp(app.cacheDir)
     val client = TmdbClient(http, { prefs.apiKey.value.ifBlank { BuildConfig.TMDB_API_KEY } })
     val repo = TmdbRepository(client, prefs)
-    val ads: AdsProvider = AdsModule.provide()
+    val ads: AdsProvider = AdsModule.provide(BuildConfig.START_IO_APP_ID)
 
     /** One-shot selection handed from Home to the filter screen. */
     var presetSelection: Selection? = null

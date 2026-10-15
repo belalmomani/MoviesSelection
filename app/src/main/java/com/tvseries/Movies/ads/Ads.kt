@@ -1,19 +1,17 @@
 package com.tvseries.Movies.ads
 
 import android.content.Context
+import android.view.View
 
 /**
- * Ads integration point (Start.io) — PREPARED ONLY.
+ * Ads integration (Start.io).
  *
- * Current state: no ad SDK is on the classpath, no app id is configured, no ad request is ever made and
- * no ad space exists in any screen. [AdsModule.provide] always returns [NoOpAdsProvider].
+ * Switch: ADS_ENABLED in app/config.properties.
+ *  - false -> the "noads" source set is compiled (no SDK dependency at all, nothing is ever requested).
+ *  - true  -> the "startio" source set is compiled (SDK dependency + banner provider).
  *
- * To enable later (see README, section "Start.io"):
- *  1. add the Start.io SDK dependency in app/build.gradle.kts,
- *  2. add a real provider implementing [AdsProvider] in this package,
- *  3. return it from [AdsModule.provide] when BuildConfig.ADS_ENABLED is true,
- *  4. call [AdsProvider.canShowAt] from the screens that host a placement.
- * Ads must never be shown during filtering: see [AdPolicy].
+ * Placements: ONLY a banner on Home and on Details. Never on the filter / mood screens ([AdPolicy]).
+ * Interstitials are intentionally not implemented.
  */
 enum class AdPlacement { HOME_BANNER, DETAILS_BANNER, INTERSTITIAL_BETWEEN_SESSIONS }
 
@@ -21,15 +19,15 @@ interface AdsProvider {
     val enabled: Boolean
     fun initialize(context: Context)
     fun canShowAt(placement: AdPlacement, userIsFiltering: Boolean): Boolean
+    fun createBanner(context: Context): View?
 }
 
 object AdPolicy {
-    /** Never interrupt or decorate the filtering flow. */
+    /** Never interrupt or decorate the filtering flow; no interstitials. */
     fun allowed(placement: AdPlacement, userIsFiltering: Boolean): Boolean = when {
         userIsFiltering -> false
-        else -> placement == AdPlacement.HOME_BANNER ||
-            placement == AdPlacement.DETAILS_BANNER ||
-            placement == AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS
+        placement == AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS -> false
+        else -> true
     }
 }
 
@@ -37,8 +35,10 @@ class NoOpAdsProvider : AdsProvider {
     override val enabled: Boolean = false
     override fun initialize(context: Context) {}
     override fun canShowAt(placement: AdPlacement, userIsFiltering: Boolean): Boolean = false
+    override fun createBanner(context: Context): View? = null
 }
 
 object AdsModule {
-    fun provide(): AdsProvider = NoOpAdsProvider()
+    /** [AdsBackend] lives in src/noads or src/startio depending on ADS_ENABLED. */
+    fun provide(startIoAppId: String): AdsProvider = AdsBackend.create(startIoAppId)
 }

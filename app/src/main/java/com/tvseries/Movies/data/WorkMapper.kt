@@ -13,6 +13,12 @@ data class Mapped(val work: Work, val nodes: List<TaxonomyNode>)
  * Missing data stays "unknown" (axis absent) and is never treated as "does not match".
  */
 object WorkMapper {
+    private val THINK = setOf(9648, 878, 10765, 99, 36)
+    private val NERVES = setOf(53, 27, 80, 28, 10752, 10759)
+    private val RELAX = setOf(10751, 10749, 16, 10402, 10762)
+    private val HIGH_TENSION = setOf(53, 27, 80, 10752, 10768, 28, 10759)
+    private val LOW_TENSION = setOf(10751, 35, 10749, 16, 10402, 10762, 10767)
+
     private class Facts(
         val media: String,
         val genreIds: List<Int>?,
@@ -95,7 +101,24 @@ object WorkMapper {
         if (f.genreIds != null && TaxonomySeed.GENRE_ANIMATION in f.genreIds && f.language == "ja") format += "format.anime"
         facets[Axes.FORMAT] = format
 
-        f.genreIds?.let { ids -> facets[Axes.GENRE] = ids.map { "genre.$it" }.toSet() }
+        f.genreIds?.let { ids ->
+            facets[Axes.GENRE] = ids.map { "genre.$it" }.toSet()
+            // Estimates from genres (documented as derived / unverified in the taxonomy).
+            val moods = LinkedHashSet<String>()
+            if (ids.any { it == 35 }) moods += "mood.laugh"
+            if (ids.any { it in THINK }) moods += "mood.think"
+            if (ids.any { it in NERVES }) moods += "mood.nerves"
+            if (ids.any { it in RELAX }) moods += "mood.relax"
+            facets[Axes.MOOD] = moods
+            val score = ids.count { it in HIGH_TENSION } - ids.count { it in LOW_TENSION }
+            facets[Axes.TENSION] = setOf(
+                when {
+                    score >= 1 -> "tension.high"
+                    score <= -1 -> "tension.low"
+                    else -> "tension.medium"
+                },
+            )
+        }
 
         val year = f.date?.take(4)?.toIntOrNull()
         if (year != null && year in 1880..2039) facets[Axes.YEAR] = setOf("year.$year")
@@ -177,6 +200,12 @@ object WorkMapper {
                 ids += node.id
             }
             facets[Axes.KEYWORD] = ids
+        }
+        f.keywords?.let { kws ->
+            val names = kws.map { it.second }
+            val ending = KeywordRules.match(KeywordRules.ending, names)
+            if (ending.isNotEmpty()) facets[Axes.ENDING] = ending // no match = unknown, not "no such ending"
+            facets[Axes.AVOID] = KeywordRules.match(KeywordRules.avoid, names)
         }
         f.cast?.let { list ->
             val ids = LinkedHashSet<String>()

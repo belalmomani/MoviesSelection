@@ -35,6 +35,7 @@ object Routes {
     const val LISTS = "lists"
     const val SETTINGS = "settings"
     const val ABOUT = "about"
+    const val MOOD = "mood"
     const val DETAILS = "details/{type}/{id}"
     const val PERSON = "person/{id}"
     fun details(type: String, id: Int) = "details/$type/$id"
@@ -88,7 +89,10 @@ fun MoviesRoot(container: AppContainer) {
     ) { padding ->
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding)) {
             composable(Routes.HOME) {
-                HomeScreen(onOpen = openCard, onSearch = { nav.goTab(Routes.SEARCH) }, onFilter = openFilter)
+                HomeScreen(
+                    ads = container.ads, onOpen = openCard, onSearch = { nav.goTab(Routes.SEARCH) },
+                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) },
+                )
             }
             composable(Routes.FILTER) { FilterScreen(onOpen = openCard) }
             composable(Routes.SEARCH) {
@@ -96,6 +100,9 @@ fun MoviesRoot(container: AppContainer) {
             }
             composable(Routes.LISTS) { ListsScreen(container, onOpen = openCard) }
             composable(Routes.SETTINGS) { SettingsScreen(container, onAbout = { nav.navigate(Routes.ABOUT) }) }
+            composable(Routes.MOOD) {
+                MoodScreen(onBack = { nav.popBackStack() }, onApply = { sel -> nav.popBackStack(); openFilter(sel) })
+            }
             composable(Routes.ABOUT) { AboutScreen(onBack = { nav.popBackStack() }) }
             composable(
                 Routes.DETAILS,
@@ -104,7 +111,7 @@ fun MoviesRoot(container: AppContainer) {
                 val type = be.arguments?.getString("type") ?: "movie"
                 val id = be.arguments?.getInt("id") ?: 0
                 DetailsScreen(
-                    media = type, id = id,
+                    ads = container.ads, media = type, id = id,
                     onBack = { nav.popBackStack() },
                     onOpen = openCard,
                     onPerson = { nav.navigate(Routes.person(it)) },

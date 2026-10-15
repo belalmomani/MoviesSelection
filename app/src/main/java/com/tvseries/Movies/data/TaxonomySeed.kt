@@ -189,6 +189,46 @@ object TaxonomySeed {
         out += n("status.upcoming", Axes.STATUS, "قيد الإنتاج / قادم", "In production / upcoming")
         out += n("status.canceled", Axes.STATUS, "ملغى", "Canceled")
         out += n("status.other", Axes.STATUS, "حالة أخرى", "Other status")
+        // Mood / tension: ESTIMATES derived from TMDB genres (not official data) -> unverified, low confidence.
+        fun est(id: String, axis: String, ar: String, en: String, conf: Double) =
+            n(id, axis, ar, en, emptySet(), Source.DERIVED, Verification.UNVERIFIED, conf)
+        out += est("mood.laugh", Axes.MOOD, "يضحكني", "Makes me laugh", 0.6)
+        out += est("mood.think", Axes.MOOD, "يثير تفكيري", "Makes me think", 0.5)
+        out += est("mood.nerves", Axes.MOOD, "يشد أعصابي", "Keeps me on edge", 0.6)
+        out += est("mood.relax", Axes.MOOD, "يريحني", "Relaxing", 0.6)
+        out += est("tension.low", Axes.TENSION, "هادئ", "Calm", 0.5)
+        out += est("tension.medium", Axes.TENSION, "توتر متوسط", "Medium tension", 0.5)
+        out += est("tension.high", Axes.TENSION, "توتر عالٍ", "High tension", 0.5)
+        // Ending / avoid tags: only from TMDB keyword NAMES (English), present only when a keyword matched.
+        out += est("ending.happy", Axes.ENDING, "نهاية سعيدة", "Happy ending", 0.7)
+        out += est("ending.sad", Axes.ENDING, "نهاية حزينة", "Sad ending", 0.7)
+        out += est("ending.twist", Axes.ENDING, "نهاية ملتوية", "Twist ending", 0.7)
+        out += est("ending.open", Axes.ENDING, "نهاية مفتوحة", "Open ending", 0.7)
+        out += est("avoid.infidelity", Axes.AVOID, "خيانة", "Infidelity / betrayal", 0.7)
+        out += est("avoid.gore", Axes.AVOID, "مشاهد دموية", "Gore / blood", 0.7)
+        out += est("avoid.school", Axes.AVOID, "قصص مدرسية", "School stories", 0.7)
+        out += est("avoid.sad_ending", Axes.AVOID, "نهاية حزينة", "Sad ending (avoid)", 0.7)
         return out
+    }
+}
+
+/** Keyword-name rules (English TMDB keywords). A tag is set only when a keyword actually matches. */
+object KeywordRules {
+    val ending: Map<String, List<String>> = mapOf(
+        "ending.happy" to listOf("happy ending"),
+        "ending.sad" to listOf("sad ending", "tragic ending", "downer ending"),
+        "ending.twist" to listOf("twist ending", "surprise ending", "plot twist"),
+        "ending.open" to listOf("open ending", "ambiguous ending", "cliffhanger"),
+    )
+    val avoid: Map<String, List<String>> = mapOf(
+        "avoid.infidelity" to listOf("infidelity", "adultery", "betrayal", "cheating", "extramarital"),
+        "avoid.gore" to listOf("gore", "splatter", "bloody", "slasher", "graphic violence"),
+        "avoid.school" to listOf("school", "high school", "teenager"),
+        "avoid.sad_ending" to listOf("sad ending", "tragic ending", "downer ending"),
+    )
+
+    fun match(rules: Map<String, List<String>>, keywordNames: List<String>): Set<String> {
+        val names = keywordNames.map { it.lowercase() }
+        return rules.filter { (_, needles) -> needles.any { n -> names.any { it.contains(n) } } }.keys
     }
 }

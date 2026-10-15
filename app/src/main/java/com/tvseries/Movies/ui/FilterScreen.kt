@@ -2,34 +2,28 @@
 
 package com.tvseries.Movies.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,24 +31,45 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.tvseries.Movies.core.AxisDef
-import com.tvseries.Movies.core.AxisView
 import com.tvseries.Movies.core.Axes
+import com.tvseries.Movies.core.AxisView
 import com.tvseries.Movies.core.Condition
 import com.tvseries.Movies.core.FacetCount
 import com.tvseries.Movies.core.Outcome
 import com.tvseries.Movies.core.Taxonomy
 import com.tvseries.Movies.data.WorkCard
+
+/** Axes asked first in the guided flow. Others (cast, director, spoken languages) are only a fallback. */
+private val primaryAxes = setOf(
+    Axes.FORMAT, Axes.MOOD, Axes.TENSION, Axes.GENRE, Axes.COUNTRY, Axes.LANGUAGE, Axes.YEAR, Axes.RATING,
+    Axes.RUNTIME, Axes.SEASONS, Axes.STATUS, Axes.KEYWORD,
+)
+
+@Composable
+private fun questionTitle(axis: String, fallback: String): String = when (axis) {
+    Axes.FORMAT -> tr("ما نوع العمل؟", "What kind of title?")
+    Axes.GENRE -> tr("ما النوع الذي تفضّله؟", "Which genre?")
+    Axes.COUNTRY -> tr("من أي بلد؟", "From which country?")
+    Axes.LANGUAGE -> tr("بأي لغة أصلية؟", "Original language?")
+    Axes.YEAR -> tr("من أي فترة؟", "From which period?")
+    Axes.RATING -> tr("ما الحد الأدنى للتقييم؟", "Minimum rating?")
+    Axes.RUNTIME -> tr("ما المدة المناسبة؟", "How long?")
+    Axes.SEASONS -> tr("كم عدد المواسم؟", "How many seasons?")
+    Axes.STATUS -> tr("ما حالة العمل؟", "Status?")
+    Axes.KEYWORD -> tr("أي موضوع؟", "Which topic?")
+    Axes.MOOD -> tr("ماذا تريد أن يفعل بك العمل؟", "What should it do for you?")
+    Axes.TENSION -> tr("ما مستوى التوتر؟", "How tense?")
+    Axes.ENDING -> tr("أي نهاية؟", "Which ending?")
+    else -> fallback
+}
 
 @Composable
 fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) {
@@ -64,31 +79,28 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
     val enriching by vm.enriching.collectAsState()
     val error by vm.error.collectAsState()
     val excludeMode by vm.excludeMode.collectAsState()
+    val skipped by vm.skipped.collectAsState()
     val arabic = isArabic()
-    val expanded = remember { mutableStateMapOf<String, Boolean>() }
-    val expandedNodes = remember { mutableStateMapOf<String, Boolean>() }
 
     LaunchedEffect(Unit) { vm.consumePreset() }
 
     val u = ui
     val sel = state.selection
 
-    LazyColumn(Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
+    LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(tr("التصفية الذكية", "Smart filter"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = { vm.back() }, enabled = state.canGoBack) { Text(tr("رجوع خطوة", "Undo")) }
-                TextButton(onClick = { vm.clearAll() }, enabled = !sel.isEmpty) { Text(tr("مسح الكل", "Clear all")) }
+                Text(tr("اختر خطوة بخطوة", "Step by step"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { vm.back() }, enabled = state.canGoBack) { Text(tr("رجوع", "Back")) }
+                TextButton(onClick = { vm.clearAll() }, enabled = !sel.isEmpty) { Text(tr("ابدأ من جديد", "Restart")) }
             }
         }
         if (loading || enriching) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
 
-        // Current path (breadcrumb): every condition can be removed independently.
         item {
             val conds = sel.conditions()
             if (conds.isNotEmpty() && u != null) {
                 Column(Modifier.padding(horizontal = 12.dp)) {
-                    Text(tr("المسار الحالي", "Current path"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         conds.forEach { cond -> ConditionChip(cond, u.snapshot.taxonomy, arabic) { vm.removeCondition(cond) } }
                     }
@@ -96,13 +108,27 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
             }
         }
         item {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = excludeMode, onCheckedChange = { vm.setExcludeMode(it) })
-                Text(
-                    if (excludeMode) tr("وضع الاستبعاد: اضغط قيمة لاستبعادها", "Exclude mode: tap a value to exclude it")
-                    else tr("وضع الاختيار: اضغط قيمة لتضمينها", "Include mode: tap a value to include it"),
-                    modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall,
-                )
+            var avoidOpen by remember { mutableStateOf(false) }
+            Column(Modifier.padding(horizontal = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { avoidOpen = !avoidOpen }) {
+                        Text(if (avoidOpen) tr("إخفاء «ما لا أريده»", "Hide \"things I don't want\"") else tr("ما لا أريده ▾", "Things I don't want ▾"))
+                    }
+                    TextButton(onClick = { vm.pickRandom()?.let(onOpen) }, enabled = (u?.result?.matched?.isNotEmpty() == true)) {
+                        Text(tr("🎲 فاجئني", "🎲 Surprise me"))
+                    }
+                }
+                if (avoidOpen) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Presets.avoid.forEach { a ->
+                            FilterChip(selected = a.isOn(sel), onClick = { vm.toggleAvoid(a) }, label = { Text(tr(a.ar, a.en)) })
+                        }
+                    }
+                    Text(
+                        tr("بعض الاستبعادات تعتمد على كلمات TMDB المفتاحية وقد تفوتها أعمال.", "Some exclusions rely on TMDB keywords and may miss titles."),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         error?.let { e -> item { ErrorBox(e, onRetry = { vm.loadMore(false) }) } }
@@ -110,68 +136,64 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
         if (u == null) {
             item { CenterLoading() }
         } else {
-            item { OutcomeCard(u.outcome, u.snapshot.cards, u.snapshot.taxonomy, arabic, onOpen, u.result.matched.size, u.result.possible.size, u.snapshot.works.size, u.poolComplete) }
+            val outcome = u.outcome
+            val tax = u.snapshot.taxonomy
 
-            // Axis suggestions first, then every other axis that still has useful values.
-            val suggested = u.suggestions.map { it.axis }
-            val order = suggested + u.axisViews.keys.filter { it !in suggested }
-            item {
-                Text(
-                    tr("الخطوة التالية المقترحة هي المحاور المفتوحة بالأعلى؛ الترتيب يتغير حسب اختياراتك وبياناتك.", "Suggested next steps are the open axes on top; the order changes with your selection and data."),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                )
-            }
-            items(order, key = { "axis-$it" }) { axisId ->
-                val view = u.axisViews[axisId]
-                val def = u.snapshot.taxonomy.axes.firstOrNull { it.id == axisId }
-                if (view != null && def != null) {
-                    val isSuggestedTop = suggested.take(3).contains(axisId)
-                    val isOpen = expanded[axisId] ?: (isSuggestedTop || sel.include[axisId] != null || sel.exclude[axisId] != null)
-                    AxisSection(
-                        def = def, view = view, taxonomy = u.snapshot.taxonomy, arabic = arabic, open = isOpen,
-                        suggested = isSuggestedTop, expandedNodes = expandedNodes,
-                        onToggleOpen = { expanded[axisId] = !isOpen },
-                        onPick = { value -> vm.toggle(axisId, value) },
-                    )
-                }
-            }
+            // Pick ONE question: best-ranked axis not yet skipped, preferring the friendly axes.
+            val candidates = u.suggestions.map { it.axis }.filter { it != Axes.AVOID && it !in skipped && u.axisViews[it] != null }
+            val questionAxis = (candidates.firstOrNull { it in primaryAxes } ?: candidates.firstOrNull())
+                .takeIf { outcome is Outcome.Many }
+            val questionView = questionAxis?.let { u.axisViews[it] }
 
-            item {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        tr("المحمّل الآن: ${u.snapshot.works.size} عمل من TMDB.", "Loaded now: ${u.snapshot.works.size} titles from TMDB."),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { vm.loadMore(false) }, enabled = !loading) { Text(tr("تحميل المزيد", "Load more")) }
-                        OutlinedButton(onClick = { vm.loadMore(true) }, enabled = !loading && !sel.isEmpty) { Text(tr("المزيد المطابق", "More matching")) }
-                    }
-                    Button(onClick = { vm.enrichShown() }, enabled = !enriching) {
-                        Text(tr("إثراء النتائج (جلب بيانات ناقصة لـ 20 عملًا)", "Enrich results (fetch missing data for 20 titles)"))
-                    }
-                }
-                HorizontalDivider()
-            }
-
-            val shown = u.result.matched.take(60)
-            item {
-                SectionTitle(tr("النتائج المؤكدة: ${u.result.matched.size}", "Confirmed results: ${u.result.matched.size}"))
-            }
-            items(shown, key = { "m-" + it.key }) { w ->
-                u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }) }
-            }
-            if (u.result.possible.isNotEmpty()) {
+            if (questionAxis != null && questionView != null) {
                 item {
-                    SectionTitle(tr("محتملة (بيانات ناقصة): ${u.result.possible.size}", "Possible (missing data): ${u.result.possible.size}"))
-                    Text(
-                        tr("هذه الأعمال لا تخالف شروطك، لكن معلومة مطلوبة عنها غير معروفة بعد.", "These do not contradict your conditions, but some needed information is not known yet."),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 12.dp),
+                    val def = tax.axes.first { it.id == questionAxis }
+                    QuestionCard(
+                        title = questionTitle(questionAxis, def.name(arabic)),
+                        resultCount = u.result.matched.size,
+                        axis = questionAxis, view = questionView, taxonomy = tax, arabic = arabic,
+                        excludeMode = excludeMode,
+                        onMode = { vm.setExcludeMode(it) },
+                        onPick = { value -> vm.toggle(questionAxis, value) },
+                        onSkip = { vm.skip(questionAxis) },
                     )
                 }
-                items(u.result.possible.take(40), key = { "p-" + it.key }) { w ->
+            } else {
+                if (outcome !is Outcome.Many) {
+                    item { OutcomeCard(outcome, u.snapshot.cards, tax, arabic, onOpen, u.result.possible.size, u.snapshot.works.size) }
+                }
+            }
+
+            if (outcome is Outcome.Many && questionAxis == null) {
+                item {
+                    Text(
+                        tr("لا توجد أسئلة مفيدة أخرى. هذه كل الأعمال المتبقية:", "No more useful questions. Here are all remaining titles:"),
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+
+            val showList = outcome !is Outcome.Single && outcome !is Outcome.NoResults && outcome !is Outcome.PoolEmpty
+            if (showList) {
+                item { SectionTitle(tr("النتائج الحالية: ${u.result.matched.size}", "Current results: ${u.result.matched.size}")) }
+                items(u.result.matched.take(40), key = { "m-" + it.key }) { w ->
                     u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }) }
+                }
+            }
+            if (u.result.possible.isNotEmpty() && outcome !is Outcome.Single) {
+                item {
+                    SectionTitle(tr("قد تطابق (بياناتها ناقصة): ${u.result.possible.size}", "Might match (missing data): ${u.result.possible.size}"))
+                }
+                items(u.result.possible.take(15), key = { "p-" + it.key }) { w ->
+                    u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }) }
+                }
+            }
+
+            item {
+                Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { vm.loadMore(false) }, enabled = !loading) { Text(tr("تحميل المزيد", "Load more")) }
+                    OutlinedButton(onClick = { vm.loadMore(true) }, enabled = !loading && !sel.isEmpty) { Text(tr("المزيد المطابق", "More matching")) }
+                    OutlinedButton(onClick = { vm.enrichShown() }, enabled = !enriching) { Text(tr("إكمال البيانات", "Complete data")) }
                 }
             }
         }
@@ -179,14 +201,70 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
 }
 
 @Composable
+private fun QuestionCard(
+    title: String,
+    resultCount: Int,
+    axis: String,
+    view: AxisView,
+    taxonomy: Taxonomy,
+    arabic: Boolean,
+    excludeMode: Boolean,
+    onMode: (Boolean) -> Unit,
+    onPick: (String) -> Unit,
+    onSkip: () -> Unit,
+) {
+    // Show the clearest level of a hierarchy: countries (not regions), decades (not single years) when possible.
+    val values: List<FacetCount> = run {
+        var v = view.values
+        if (axis == Axes.COUNTRY) v = v.filter { !it.value.startsWith("region.") }.ifEmpty { view.values }
+        if (axis == Axes.YEAR) {
+            val decades = v.filter { it.value.startsWith("decade.") }
+            if (decades.size > 1) v = decades
+        }
+        v
+    }
+    var limit by remember(axis) { mutableStateOf(14) }
+
+    Card(Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(tr("$resultCount عمل متبقٍ", "$resultCount titles left"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                values.take(limit).forEach { fc -> ValueChip(fc, taxonomy, arabic, onPick) }
+            }
+            if (values.size > limit) TextButton(onClick = { limit += 14 }) { Text(tr("عرض المزيد", "Show more")) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = excludeMode, onCheckedChange = onMode)
+                Text(
+                    if (excludeMode) tr("استبعاد: اضغط ما لا تريده", "Exclude: tap what you don't want")
+                    else tr("استبعاد بدل الاختيار", "Exclude instead of choose"),
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp).weight(1f),
+                )
+                TextButton(onClick = onSkip) { Text(tr("تخطَّ السؤال", "Skip")) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ValueChip(fc: FacetCount, taxonomy: Taxonomy, arabic: Boolean, onPick: (String) -> Unit) {
+    val name = taxonomy.node(fc.value)?.name(arabic) ?: fc.value
+    val count = if (fc.selected || fc.excluded) fc.inResult else fc.afterInclude
+    FilterChip(
+        selected = fc.selected,
+        onClick = { onPick(fc.value) },
+        label = { Text((if (fc.excluded) "⊘ " else "") + name + " · " + count) },
+    )
+}
+
+@Composable
 private fun ConditionChip(cond: Condition, taxonomy: Taxonomy, arabic: Boolean, onRemove: () -> Unit) {
     val name = taxonomy.node(cond.value)?.name(arabic) ?: cond.value
-    val axisName = taxonomy.axes.firstOrNull { it.id == cond.axis }?.name(arabic) ?: cond.axis
     AssistChip(
         onClick = onRemove,
         label = {
             Text(
-                (if (cond.excluded) "⊘ " else "") + axisName + ": " + name,
+                (if (cond.excluded) "⊘ " else "") + name,
                 textDecoration = if (cond.excluded) TextDecoration.LineThrough else null,
             )
         },
@@ -201,10 +279,8 @@ private fun OutcomeCard(
     taxonomy: Taxonomy,
     arabic: Boolean,
     onOpen: (WorkCard) -> Unit,
-    matched: Int,
     possible: Int,
     loaded: Int,
-    complete: Boolean,
 ) {
     Card(Modifier.fillMaxWidth().padding(12.dp)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -213,160 +289,37 @@ private fun OutcomeCard(
                 is Outcome.NoResults -> {
                     Text(tr("لا توجد نتائج مؤكدة.", "No confirmed results."), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        if (outcome.poolComplete) tr("لا يوجد عمل مطابق ضمن كل ما حُمّل ($loaded عمل). خفّف أحد الشروط.", "Nothing matches in all loaded data ($loaded titles). Relax a condition.")
-                        else tr("لا توجد نتيجة ضمن الأعمال المحمّلة فقط ($loaded). اضغط «المزيد المطابق» لجلب أعمال جديدة من TMDB قبل الحكم بعدم وجودها.", "No match among the $loaded loaded titles only. Tap \"More matching\" to fetch more from TMDB before concluding none exist."),
+                        if (outcome.poolComplete) tr("لا يوجد عمل مطابق ضمن كل ما حُمّل ($loaded عمل). احذف أحد الشروط من الأعلى.", "Nothing matches in all loaded data ($loaded titles). Remove a condition above.")
+                        else tr("لا نتيجة ضمن الأعمال المحمّلة ($loaded). اضغط «المزيد المطابق» قبل الحكم بعدم وجودها.", "No match among the $loaded loaded titles. Tap \"More matching\" before concluding none exist."),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 is Outcome.OnlyPossible -> {
                     Text(tr("لا نتيجة مؤكدة، لكن ${outcome.possibleCount} عمل قد يطابق.", "No confirmed result, but ${outcome.possibleCount} titles might match."), style = MaterialTheme.typography.titleSmall)
-                    Text(tr("بعض بياناتها غير معروفة بعد. اضغط «إثراء النتائج» لاستكمالها.", "Some of their data is not known yet. Tap \"Enrich results\" to complete it."), style = MaterialTheme.typography.bodySmall)
+                    Text(tr("بياناتها ناقصة. اضغط «إكمال البيانات».", "Their data is incomplete. Tap \"Complete data\"."), style = MaterialTheme.typography.bodySmall)
                 }
                 is Outcome.Single -> {
                     val card = cards[outcome.work.key]
-                    Text(tr("وصلت إلى عمل واحد 🎯", "You reached a single title 🎯"), style = MaterialTheme.typography.titleSmall)
+                    Text(tr("وصلت إلى العمل المناسب 🎯", "You found your title 🎯"), style = MaterialTheme.typography.titleMedium)
                     if (card != null) WorkRow(card, onClick = { onOpen(card) })
-                    Text(tr("أسباب المطابقة (مؤكدة من البيانات):", "Why it matches (verified from data):"), style = MaterialTheme.typography.labelMedium)
+                    Text(tr("لماذا يناسبك:", "Why it matches:"), style = MaterialTheme.typography.labelMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         outcome.reasons.forEach { r ->
                             val n = taxonomy.node(r.value)?.name(arabic) ?: r.value
-                            val ax = taxonomy.axes.firstOrNull { it.id == r.axis }?.name(arabic) ?: r.axis
-                            AssistChip(onClick = {}, label = { Text((if (r.excluded) "⊘ " else "") + ax + ": " + n) })
+                            AssistChip(onClick = {}, label = { Text((if (r.excluded) "⊘ " else "") + n) })
                         }
                     }
+                    if (card != null) Button(onClick = { onOpen(card) }) { Text(tr("افتح التفاصيل", "Open details")) }
                     if (outcome.otherPossible > 0) {
-                        Text(tr("يوجد ${outcome.otherPossible} عمل آخر محتمل ببيانات ناقصة.", "${outcome.otherPossible} other titles are possible with missing data."), style = MaterialTheme.typography.bodySmall)
+                        Text(tr("يوجد ${outcome.otherPossible} آخر محتمل ببيانات ناقصة.", "${outcome.otherPossible} others are possible with missing data."), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 is Outcome.Indistinguishable -> {
-                    Text(tr("تعذّر التمييز بين ${outcome.works.size} أعمال بالسمات المعروفة.", "Cannot tell ${outcome.works.size} titles apart with the known attributes."), style = MaterialTheme.typography.titleSmall)
-                    Text(tr("لا توجد خطوة تصفية مفيدة أخرى؛ كل الأعمال المتبقية معروضة أدناه. جرّب «إثراء النتائج» لإضافة سمات.", "No further useful filter step; all remaining titles are listed below. Try \"Enrich results\" to add attributes."), style = MaterialTheme.typography.bodySmall)
+                    Text(tr("تعذّر التمييز بين ${outcome.works.size} أعمال بالمعلومات المتوفرة.", "Cannot tell ${outcome.works.size} titles apart with the available data."), style = MaterialTheme.typography.titleSmall)
+                    Text(tr("هذه كلها أدناه. اضغط «إكمال البيانات» لعلّ معلومات جديدة تفرّق بينها.", "All listed below. Tap \"Complete data\" - new info may tell them apart."), style = MaterialTheme.typography.bodySmall)
                 }
-                is Outcome.Many -> {
-                    Text(tr("${outcome.count} نتيجة مؤكدة", "${outcome.count} confirmed results"), style = MaterialTheme.typography.titleSmall)
-                    val names = outcome.next.take(3).mapNotNull { s -> taxonomy.axes.firstOrNull { it.id == s.axis }?.name(arabic) }
-                    if (names.isNotEmpty()) Text(tr("الأنسب للتضييق الآن: ", "Best next narrowing: ") + names.joinToString(" • "), style = MaterialTheme.typography.bodySmall)
-                    if (possible > 0) Text(tr("+ $possible محتملة ببيانات ناقصة.", "+ $possible possible with missing data."), style = MaterialTheme.typography.bodySmall)
-                }
+                is Outcome.Many -> {}
             }
         }
     }
-}
-
-@Composable
-private fun AxisSection(
-    def: AxisDef,
-    view: AxisView,
-    taxonomy: Taxonomy,
-    arabic: Boolean,
-    open: Boolean,
-    suggested: Boolean,
-    expandedNodes: SnapshotStateMap<String, Boolean>,
-    onToggleOpen: () -> Unit,
-    onPick: (String) -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
-        Row(Modifier.fillMaxWidth().clickable(onClick = onToggleOpen).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                def.name(arabic) + (if (suggested) " ★" else ""),
-                style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
-            )
-            Text("${view.values.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = null)
-        }
-        if (open) {
-            var query by remember(def.id) { mutableStateOf("") }
-            var limit by remember(def.id) { mutableStateOf(40) }
-            if (view.values.size > 12) {
-                OutlinedTextField(
-                    value = query, onValueChange = { query = it }, singleLine = true,
-                    label = { Text(tr("ابحث داخل ${def.nameAr}", "Search in ${def.nameEn}")) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            val counts = view.values.associateBy { it.value }
-            if (query.isNotBlank()) {
-                val q = query.trim().lowercase()
-                val hits = view.values.filter { fc ->
-                    val n = taxonomy.node(fc.value)
-                    n != null && (q in n.nameAr.lowercase() || q in n.nameEn.lowercase() || n.synonyms.any { q in it.lowercase() })
-                }.take(limit)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    hits.forEach { ValueChip(it, taxonomy, arabic, onPick) }
-                }
-                if (hits.isEmpty()) Text(tr("لا قيم مطابقة للبحث.", "No values match the search."), style = MaterialTheme.typography.bodySmall)
-            } else {
-                val present = counts.keys
-                val childrenOf = HashMap<String, MutableList<String>>()
-                val roots = ArrayList<String>()
-                for (fc in view.values) {
-                    val parents = taxonomy.node(fc.value)?.parents.orEmpty().filter { it in present }
-                    if (parents.isEmpty()) roots += fc.value
-                    else for (p in parents) childrenOf.getOrPut(p) { ArrayList() }.add(fc.value)
-                }
-                ValueTree(roots.take(limit), counts, childrenOf, taxonomy, arabic, expandedNodes, onPick)
-                if (roots.size > limit) TextButton(onClick = { limit += 40 }) { Text(tr("عرض المزيد", "Show more")) }
-            }
-            if (view.unknownInResult > 0) {
-                Text(
-                    tr("${view.unknownInResult} نتيجة بلا بيانات لهذا المحور (غير معروف وليس غير مطابق).", "${view.unknownInResult} results have no data on this axis (unknown, not a mismatch)."),
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        HorizontalDivider()
-    }
-}
-
-@Composable
-private fun ValueTree(
-    ids: List<String>,
-    counts: Map<String, FacetCount>,
-    childrenOf: Map<String, List<String>>,
-    taxonomy: Taxonomy,
-    arabic: Boolean,
-    expandedNodes: SnapshotStateMap<String, Boolean>,
-    onPick: (String) -> Unit,
-) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ids.forEach { id ->
-            val fc = counts[id] ?: return@forEach
-            val kids = childrenOf[id].orEmpty()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ValueChip(fc, taxonomy, arabic, onPick)
-                if (kids.isNotEmpty()) {
-                    val isOpen = expandedNodes[id] == true
-                    Icon(
-                        if (isOpen) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = tr("التصنيفات الفرعية", "Sub-categories"),
-                        modifier = Modifier.size(28.dp).clickable { expandedNodes[id] = !isOpen },
-                    )
-                }
-            }
-        }
-    }
-    ids.forEach { id ->
-        val kids = childrenOf[id].orEmpty()
-        if (kids.isNotEmpty() && expandedNodes[id] == true) {
-            Column(Modifier.padding(start = 16.dp, top = 4.dp)) {
-                ValueTree(kids, counts, childrenOf, taxonomy, arabic, expandedNodes, onPick)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ValueChip(fc: FacetCount, taxonomy: Taxonomy, arabic: Boolean, onPick: (String) -> Unit) {
-    val name = taxonomy.node(fc.value)?.name(arabic) ?: fc.value
-    val count = if (fc.selected || fc.excluded) fc.inResult else fc.afterInclude
-    FilterChip(
-        selected = fc.selected,
-        onClick = { onPick(fc.value) },
-        label = {
-            Text(
-                (if (fc.excluded) "⊘ " else "") + name + " · " + count,
-                textDecoration = if (fc.excluded) TextDecoration.LineThrough else null,
-            )
-        },
-    )
 }

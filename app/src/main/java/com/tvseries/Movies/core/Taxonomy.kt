@@ -24,9 +24,15 @@ object Axes {
     const val CAST = "cast"
     const val DIRECTOR = "director"
     const val SPOKEN = "spoken"
+    const val MOOD = "mood"
+    const val TENSION = "tension"
+    const val ENDING = "ending"
+    const val AVOID = "avoid"
 
     val all: List<AxisDef> = listOf(
         AxisDef(FORMAT, "نوع العمل", "Type"),
+        AxisDef(MOOD, "المزاج المناسب", "Mood"),
+        AxisDef(TENSION, "مستوى التوتر", "Tension level"),
         AxisDef(GENRE, "النوع", "Genre"),
         AxisDef(YEAR, "سنة الإصدار", "Release year"),
         AxisDef(COUNTRY, "بلد الإنتاج", "Production country"),
@@ -39,6 +45,8 @@ object Axes {
         AxisDef(CAST, "الممثلون", "Cast"),
         AxisDef(DIRECTOR, "المخرج / المنشئ", "Director / creator"),
         AxisDef(SPOKEN, "لغات الحوار", "Spoken languages"),
+        AxisDef(ENDING, "النهاية", "Ending"),
+        AxisDef(AVOID, "ما قد لا يعجبك", "May not suit you"),
     )
 }
 

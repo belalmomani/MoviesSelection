@@ -97,10 +97,47 @@ class DataLayerTest {
         assertNotNull(ServerRefine.refine(tvOnly, t, "tv", DiscoverQuery()))
     }
 
-    @Test fun adsAreDisabledAndNeverShownWhileFiltering() {
-        assertFalse(AdsModule.provide().enabled)
-        assertFalse(AdsModule.provide().canShowAt(AdPlacement.HOME_BANNER, false))
-        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = true))
+    @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {
+        assertFalse(AdPolicy.allowed(AdPlacement.HOME_BANNER, userIsFiltering = true))
+        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = false))
+        assertTrue(AdPolicy.allowed(AdPlacement.HOME_BANNER, userIsFiltering = false))
+        assertTrue(AdPolicy.allowed(AdPlacement.DETAILS_BANNER, userIsFiltering = false))
+    }
+
+    @Test fun moodTensionAndKeywordDerivedTags() {
+        val d = com.tvseries.Movies.data.DetailsDto(
+            id = 9, title = "T", genres = listOf(com.tvseries.Movies.data.GenreDto(35, "Comedy")), releaseDate = "2001-01-01",
+            keywords = com.tvseries.Movies.data.KeywordsDto(
+                keywords = listOf(
+                    com.tvseries.Movies.data.KeywordDto(1, "happy ending"),
+                    com.tvseries.Movies.data.KeywordDto(2, "High School"),
+                ),
+            ),
+        )
+        val w = WorkMapper.fromDetails("movie", d).work
+        assertEquals(setOf("mood.laugh"), w.facets[Axes.MOOD])
+        assertEquals(setOf("tension.low"), w.facets[Axes.TENSION])
+        assertEquals(setOf("ending.happy"), w.facets[Axes.ENDING])
+        assertEquals(setOf("avoid.school"), w.facets[Axes.AVOID])
+        // keywords known but none matches: ending stays UNKNOWN, avoid is known-empty
+        val plain = WorkMapper.fromDetails(
+            "movie",
+            d.copy(keywords = com.tvseries.Movies.data.KeywordsDto(keywords = listOf(com.tvseries.Movies.data.KeywordDto(3, "robot")))),
+        ).work
+        assertNull(plain.facets[Axes.ENDING])
+        assertEquals(emptySet<String>(), plain.facets[Axes.AVOID])
+        // list-level data has no keywords -> both unknown
+        val list = WorkMapper.fromListItem("movie", ListItemDto(id = 1, title = "x", genreIds = listOf(27, 53))).work
+        assertNull(list.facets[Axes.AVOID])
+        assertEquals(setOf("tension.high"), list.facets[Axes.TENSION])
+    }
+
+    @Test fun avoidOptionsExcludeAndRestore() {
+        val opt = com.tvseries.Movies.ui.Presets.avoid.first { it.id == "no_long" }
+        val on = opt.toggle(Selection())
+        assertTrue(opt.isOn(on))
+        assertTrue(on.isExcluded(Axes.RUNTIME, "runtime.m.o150"))
+        assertTrue(opt.toggle(on).isEmpty)
     }
 
     // ---- TMDB client against a local mock server (no real network / key needed) ----

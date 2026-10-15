@@ -53,6 +53,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.tvseries.Movies.MoviesApp
+import com.tvseries.Movies.ads.AdPlacement
+import com.tvseries.Movies.ads.AdsProvider
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.DetailsDto
@@ -104,6 +106,7 @@ class DetailsViewModel(app: Application) : AndroidViewModel(app) {
 
 @Composable
 fun DetailsScreen(
+    ads: AdsProvider,
     media: String,
     id: Int,
     onBack: () -> Unit,
@@ -132,7 +135,7 @@ fun DetailsScreen(
                 val card = d.toCard(media)
                 val isFav = favorites.any { it.key == card.key }
                 val inWatch = watchlist.any { it.key == card.key }
-                LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
                     item {
                         val backdrop = Img.backdrop(d.backdropPath ?: d.posterPath)
                         if (backdrop != null) {
@@ -295,5 +298,6 @@ fun DetailsScreen(
                 }
             }
         }
+        BannerSlot(ads, AdPlacement.DETAILS_BANNER)
     }
 }

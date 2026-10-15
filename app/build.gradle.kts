@@ -12,6 +12,9 @@ val appConfig = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 
+val adsEnabled = appConfig.getProperty("ADS_ENABLED")?.trim() == "true"
+val startIoAppId = (appConfig.getProperty("START_IO_APP_ID") ?: "").trim()
+
 android {
     namespace = "com.tvseries.Movies"
     compileSdk = 34
@@ -32,7 +35,8 @@ android {
             ?: ""
         buildConfigField("String", "TMDB_API_KEY", "\"${tmdbKey.trim()}\"")
         // Ads are prepared but disabled. No ad SDK is included in this build.
-        buildConfigField("boolean", "ADS_ENABLED", "false")
+        buildConfigField("boolean", "ADS_ENABLED", adsEnabled.toString())
+        manifestPlaceholders["startIoAppId"] = startIoAppId
         buildConfigField("String", "START_IO_APP_ID", "\"${(appConfig.getProperty("START_IO_APP_ID") ?: "").trim()}\"")
     }
 
@@ -43,6 +47,12 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Installable test build (debug-signed). Replace with a real signing config for Play Store.
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            java.srcDir(if (adsEnabled) "src/startio/java" else "src/noads/java")
         }
     }
 
@@ -81,6 +91,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    if (adsEnabled) implementation("com.startapp:inapp-sdk:4.+")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")

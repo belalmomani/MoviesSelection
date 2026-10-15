@@ -62,6 +62,14 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     private val _excludeMode = MutableStateFlow(false)
     val excludeMode: StateFlow<Boolean> = _excludeMode.asStateFlow()
 
+    private val _skipped = MutableStateFlow<Set<String>>(emptySet())
+    val skipped: StateFlow<Set<String>> = _skipped.asStateFlow()
+
+    /** Skip the current question; the wizard moves to the next best axis. */
+    fun skip(axis: String) {
+        _skipped.value = _skipped.value + axis
+    }
+
     private var recomputeJob: Job? = null
     private val autoRefined = HashSet<String>()
 
@@ -77,6 +85,15 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     fun toggle(axis: String, value: String) {
         val sel = _state.value.selection
         applySelection(if (_excludeMode.value) sel.toggleExclude(axis, value) else sel.toggleInclude(axis, value))
+    }
+
+    fun toggleAvoid(opt: AvoidOption) = applySelection(opt.toggle(_state.value.selection))
+
+    /** A random confirmed result ("surprise me"). */
+    fun pickRandom(): com.tvseries.Movies.data.WorkCard? {
+        val u = _ui.value ?: return null
+        val w = u.result.matched.randomOrNull() ?: return null
+        return u.snapshot.cards[w.key]
     }
 
     fun removeCondition(cond: Condition) = applySelection(_state.value.selection.remove(cond))
@@ -106,6 +123,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun persistAndRefresh() {
+        _skipped.value = emptySet()
         c.prefs.saveSelection(_state.value.selection)
         recompute()
         val base = c.repo.baseQuery().signature()
@@ -161,10 +179,11 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Fetches full details (country, runtime, seasons, status, keywords, cast...) for up to 20 shown works. */
-    fun enrichShown() {
+    fun enrichShown(limit: Int = ENRICH_BATCH) {
         val u = _ui.value ?: return
         if (_enriching.value) return
-        val keys = (u.result.matched + u.result.possible).map { it.key }.filter { !pool.isEnriched(it) }.take(ENRICH_BATCH)
+        // Works with missing data first: they are the ones that may flip to confirmed / excluded.
+        val keys = (u.result.possible + u.result.matched).map { it.key }.filter { !pool.isEnriched(it) }.take(limit)
         if (keys.isEmpty()) return
         viewModelScope.launch {
             _enriching.value = true
@@ -214,7 +233,21 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
             }
             _ui.value = built
             maybeAutoRefine(built.result.matched.size)
+            maybeAutoEnrich()
         }
+    }
+
+    private val enrichSigs = HashSet<String>()
+    private val detailAxes = setOf(
+        Axes.RUNTIME, Axes.SEASONS, Axes.STATUS, Axes.ENDING, Axes.AVOID, Axes.KEYWORD, Axes.CAST, Axes.DIRECTOR, Axes.SPOKEN,
+    )
+
+    /** Conditions on axes TMDB only provides in details (runtime, keywords...) -> fetch details once per selection. */
+    private fun maybeAutoEnrich() {
+        val sel = _state.value.selection
+        if (_enriching.value || (sel.include.keys + sel.exclude.keys).none { it in detailAxes }) return
+        if (!enrichSigs.add(sel.toString())) return
+        enrichShown(AUTO_ENRICH_BATCH)
     }
 
     /** Few matches + server-filterable conditions -> fetch matching titles once per selection. */
@@ -229,6 +262,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         const val PAGES_PER_LOAD = 2
         const val ENRICH_BATCH = 20
+        const val AUTO_ENRICH_BATCH = 30
         const val AUTO_REFINE_BELOW = 12
     }
 }

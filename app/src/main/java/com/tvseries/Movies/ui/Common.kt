@@ -27,6 +27,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import android.view.View
+import androidx.compose.ui.viewinterop.AndroidView
+import com.tvseries.Movies.ads.AdPlacement
+import com.tvseries.Movies.ads.AdsProvider
 import com.tvseries.Movies.data.Img
 import com.tvseries.Movies.data.TmdbError
 import com.tvseries.Movies.data.WorkCard
@@ -130,4 +134,11 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
         text, style = MaterialTheme.typography.titleMedium,
         modifier = modifier.padding(horizontal = 12.dp, vertical = 8.dp),
     )
+}
+
+/** Banner placed only on Home and Details (never on the filter screen). Renders nothing when ads are off. */
+@Composable
+fun BannerSlot(ads: AdsProvider, placement: AdPlacement) {
+    if (!ads.canShowAt(placement, userIsFiltering = false)) return
+    AndroidView(factory = { ctx -> ads.createBanner(ctx) ?: View(ctx) }, modifier = Modifier.fillMaxWidth())
 }
