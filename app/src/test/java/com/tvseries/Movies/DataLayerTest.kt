@@ -1,0 +1,162 @@
+package com.tvseries.Movies
+
+import com.tvseries.Movies.ads.AdPlacement
+import com.tvseries.Movies.ads.AdPolicy
+import com.tvseries.Movies.ads.AdsModule
+import com.tvseries.Movies.core.Axes
+import com.tvseries.Movies.core.Selection
+import com.tvseries.Movies.core.Taxonomy
+import com.tvseries.Movies.data.DiscoverQuery
+import com.tvseries.Movies.data.ListItemDto
+import com.tvseries.Movies.data.MemoryStore
+import com.tvseries.Movies.data.PageDto
+import com.tvseries.Movies.data.Prefs
+import com.tvseries.Movies.data.ServerRefine
+import com.tvseries.Movies.data.TaxonomySeed
+import com.tvseries.Movies.data.TmdbClient
+import com.tvseries.Movies.data.TmdbError
+import com.tvseries.Movies.data.WorkCard
+import com.tvseries.Movies.data.WorkMapper
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DataLayerTest {
+    @Test fun seedTaxonomyIsValid() {
+        val issues = Taxonomy(TaxonomySeed.nodes()).validate()
+        assertTrue(issues.toString(), issues.isEmpty())
+    }
+
+    @Test fun prefsPersistAndRestore() {
+        val store = MemoryStore()
+        val p1 = Prefs(store)
+        p1.setLanguage("en"); p1.setTheme("dark"); p1.setShowAdult(true); p1.setMinVotes(500)
+        p1.setHistoryEnabled(true); p1.addHistory("matrix")
+        p1.toggleFavorite(WorkCard("movie", 603, "The Matrix", year = "1999"))
+        p1.toggleWatchlist(WorkCard("tv", 1396, "Breaking Bad"))
+        val sel = Selection().toggleInclude(Axes.GENRE, "genre.28").toggleExclude(Axes.COUNTRY, "country.US")
+        p1.saveSelection(sel)
+
+        val p2 = Prefs(store) // fresh instance over the same storage = app restart
+        assertEquals("en", p2.language.value)
+        assertEquals("dark", p2.theme.value)
+        assertTrue(p2.showAdult.value)
+        assertEquals(500, p2.minVotes.value)
+        assertEquals(listOf("matrix"), p2.history.value)
+        assertEquals("movie:603", p2.favorites.value.single().key)
+        assertEquals("tv:1396", p2.watchlist.value.single().key)
+        assertEquals(sel, p2.loadSelection())
+    }
+
+    @Test fun historyIsOffByDefault() {
+        val p = Prefs(MemoryStore())
+        p.addHistory("something")
+        assertTrue(p.history.value.isEmpty())
+        assertFalse(p.historyEnabled.value)
+    }
+
+    @Test fun listItemMappingKeepsUnknownAsUnknown() {
+        val movie = WorkMapper.fromListItem(
+            "movie",
+            ListItemDto(id = 1, title = "M", releaseDate = "1999-03-31", genreIds = listOf(28), originalLanguage = "en", voteAverage = 8.2, voteCount = 5000),
+        ).work
+        assertNull(movie.facets[Axes.COUNTRY]) // TMDB list data has no country for movies -> unknown
+        assertEquals(setOf("genre.28"), movie.facets[Axes.GENRE])
+        assertEquals(setOf("year.1999"), movie.facets[Axes.YEAR])
+        assertEquals(setOf("rating.8"), movie.facets[Axes.RATING])
+        assertEquals(emptySet<String>(), movie.facets[Axes.SEASONS]) // not applicable to films
+
+        val tv = WorkMapper.fromListItem(
+            "tv",
+            ListItemDto(id = 2, name = "T", firstAirDate = "2016-01-01", genreIds = listOf(16), originalLanguage = "ja", originCountry = listOf("JP"), voteAverage = 3.0, voteCount = 2),
+        ).work
+        assertEquals(setOf("country.JP"), tv.facets[Axes.COUNTRY])
+        assertTrue("format.anime" in tv.facets[Axes.FORMAT]!!)
+        assertNull(tv.facets[Axes.RATING]) // too few votes -> unknown
+    }
+
+    @Test fun serverRefineBuildsDiscoverQuery() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleInclude(Axes.GENRE, "genre.27").toggleInclude(Axes.COUNTRY, "country.KR")
+            .toggleInclude(Axes.YEAR, "decade.2010").toggleInclude(Axes.RATING, "rating.7")
+        val q = ServerRefine.refine(sel, t, "movie", DiscoverQuery())!!
+        assertEquals(setOf(27), q.genres)
+        assertEquals(setOf("KR"), q.countries)
+        assertEquals(2010, q.yearFrom); assertEquals(2019, q.yearTo)
+        assertEquals(7, q.minRating)
+        // genre that only exists for TV cannot match movies
+        val tvOnly = Selection().toggleInclude(Axes.GENRE, "genre.10762")
+        assertNull(ServerRefine.refine(tvOnly, t, "movie", DiscoverQuery()))
+        assertNotNull(ServerRefine.refine(tvOnly, t, "tv", DiscoverQuery()))
+    }
+
+    @Test fun adsAreDisabledAndNeverShownWhileFiltering() {
+        assertFalse(AdsModule.provide().enabled)
+        assertFalse(AdsModule.provide().canShowAt(AdPlacement.HOME_BANNER, false))
+        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = true))
+    }
+
+    // ---- TMDB client against a local mock server (no real network / key needed) ----
+
+    private fun client(server: MockWebServer, key: String = "k") =
+        TmdbClient(OkHttpClient(), { key }, server.url("/3/").toString())
+
+    @Test fun clientParsesPage() = runBlocking {
+        val s = MockWebServer()
+        s.enqueue(MockResponse().setBody("""{"page":1,"total_pages":3,"results":[{"id":5,"title":"X","genre_ids":[28],"unknown_field":1}]}"""))
+        s.start()
+        val page = client(s).get("discover/movie", mapOf("page" to "1"), PageDto.serializer())
+        assertEquals(3, page.totalPages)
+        assertEquals(5, page.results.single().id)
+        assertTrue(s.takeRequest().path!!.contains("api_key=k"))
+        s.shutdown()
+    }
+
+    @Test fun clientMapsErrors() = runBlocking {
+        suspend fun kind(code: Int, key: String = "k"): TmdbError.Kind {
+            val s = MockWebServer()
+            s.enqueue(MockResponse().setResponseCode(code).setBody("{}"))
+            if (code == 429) s.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "0").setBody("{}"))
+            s.start()
+            return try {
+                client(s, key).get("x", emptyMap(), PageDto.serializer())
+                error("expected failure")
+            } catch (e: TmdbError) {
+                e.kind
+            } finally {
+                s.shutdown()
+            }
+        }
+        assertEquals(TmdbError.Kind.UNAUTHORIZED, kind(401))
+        assertEquals(TmdbError.Kind.NOT_FOUND, kind(404))
+        assertEquals(TmdbError.Kind.SERVER, kind(500))
+        assertEquals(TmdbError.Kind.NO_KEY, kind(200, key = ""))
+    }
+
+    @Test fun clientReportsParseErrorsAndOffline() = runBlocking {
+        val s = MockWebServer()
+        s.enqueue(MockResponse().setBody("not json"))
+        s.start()
+        try {
+            client(s).get("x", emptyMap(), PageDto.serializer())
+            error("expected failure")
+        } catch (e: TmdbError) {
+            assertEquals(TmdbError.Kind.PARSE, e.kind)
+        }
+        val url = s.url("/3/").toString()
+        s.shutdown() // server gone -> connection refused
+        try {
+            TmdbClient(OkHttpClient(), { "k" }, url).get("x", emptyMap(), PageDto.serializer())
+            error("expected failure")
+        } catch (e: TmdbError) {
+            assertEquals(TmdbError.Kind.NETWORK, e.kind)
+        }
+    }
+}
