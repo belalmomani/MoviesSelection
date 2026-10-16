@@ -36,7 +36,7 @@ class TmdbRepository(private val client: TmdbClient, private val prefs: Prefs) {
     suspend fun details(media: String, id: Int): DetailsDto {
         val key = "$media:$id:$uiLang"
         cacheLock.withLock { detailsCache[key] }?.let { return it }
-        val params = mapOf("language" to uiLang, "append_to_response" to "credits,keywords,similar")
+        val params = mapOf("language" to uiLang, "append_to_response" to "credits,keywords,similar,watch/providers")
         var d = client.get("$media/$id", params, DetailsDto.serializer())
         if (d.overview.isNullOrBlank() && uiLang != "en-US") {
             // Many titles have no Arabic overview; fall back to the English one instead of showing nothing.

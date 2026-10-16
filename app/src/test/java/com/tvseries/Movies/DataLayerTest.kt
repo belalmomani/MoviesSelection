@@ -132,6 +132,15 @@ class DataLayerTest {
         assertEquals(setOf("tension.high"), list.facets[Axes.TENSION])
     }
 
+    @Test fun watchProvidersParse() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; coerceInputValues = true }
+        val d = json.decodeFromString(
+            com.tvseries.Movies.data.DetailsDto.serializer(),
+            """{"id":1,"title":"x","watch/providers":{"results":{"JO":{"link":"https://x","flatrate":[{"provider_name":"Netflix"}]}}}}""",
+        )
+        assertEquals("Netflix", d.watchProviders!!.results["JO"]!!.flatrate!!.single().name)
+    }
+
     @Test fun avoidOptionsExcludeAndRestore() {
         val opt = com.tvseries.Movies.ui.Presets.avoid.first { it.id == "no_long" }
         val on = opt.toggle(Selection())

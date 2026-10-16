@@ -45,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -209,6 +210,33 @@ fun DetailsScreen(
                         )
                         d.collection?.takeIf { it.name.isNotBlank() }?.let {
                             Text(tr("ضمن سلسلة: ", "Part of: ") + it.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
+                        }
+                    }
+                    d.watchProviders?.let { wp ->
+                        item {
+                            val region = remember { android.content.res.Resources.getSystem().configuration.locales[0].country.ifBlank { "US" } }
+                            val info = wp.results[region]
+                            val uri = LocalUriHandler.current
+                            SectionTitle(tr("أين أشاهده ($region)", "Where to watch ($region)"))
+                            Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                val groups = listOf(
+                                    tr("اشتراك", "Stream") to info?.flatrate,
+                                    tr("إيجار", "Rent") to info?.rent,
+                                    tr("شراء", "Buy") to info?.buy,
+                                ).filter { !it.second.isNullOrEmpty() }
+                                if (groups.isEmpty()) {
+                                    Text(tr("لا توجد بيانات بث لبلدك في TMDB.", "No streaming data for your country on TMDB."), style = MaterialTheme.typography.bodySmall)
+                                } else {
+                                    groups.forEach { (label, list) ->
+                                        Text("$label: " + list.orEmpty().joinToString("، ".takeIf { arabic } ?: ", ") { it.name }, style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                                info?.link?.let { l -> OutlinedButton(onClick = { uri.openUri(l) }) { Text(tr("افتح صفحة المشاهدة", "Open watch page")) } }
+                                Text(
+                                    tr("بيانات المشاهدة من JustWatch عبر TMDB وقد لا تكون محدثة.", "Watch data by JustWatch via TMDB; may be out of date."),
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                     val directors = if (media == "movie") d.credits?.crew.orEmpty().filter { it.job == "Director" } else d.createdBy.orEmpty()

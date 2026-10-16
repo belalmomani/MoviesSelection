@@ -155,6 +155,7 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
                         excludeMode = excludeMode,
                         onMode = { vm.setExcludeMode(it) },
                         onPick = { value -> vm.toggle(questionAxis, value) },
+                        onApplyMany = { vals -> vm.applyMany(questionAxis, vals) },
                         onSkip = { vm.skip(questionAxis) },
                     )
                 }
@@ -211,6 +212,7 @@ private fun QuestionCard(
     excludeMode: Boolean,
     onMode: (Boolean) -> Unit,
     onPick: (String) -> Unit,
+    onApplyMany: (Set<String>) -> Unit,
     onSkip: () -> Unit,
 ) {
     // Show the clearest level of a hierarchy: countries (not regions), decades (not single years) when possible.
@@ -224,13 +226,39 @@ private fun QuestionCard(
         v
     }
     var limit by remember(axis) { mutableStateOf(14) }
+    var multi by remember(axis) { mutableStateOf(false) }
+    var pending by remember(axis) { mutableStateOf(setOf<String>()) }
 
     Card(Modifier.fillMaxWidth().padding(12.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(tr("$resultCount عمل متبقٍ", "$resultCount titles left"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(title, style = MaterialTheme.typography.titleLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                values.take(limit).forEach { fc -> ValueChip(fc, taxonomy, arabic, onPick) }
+                values.take(limit).forEach { fc ->
+                    if (multi) {
+                        val name = taxonomy.node(fc.value)?.name(arabic) ?: fc.value
+                        val on = fc.value in pending
+                        FilterChip(
+                            selected = on,
+                            onClick = { pending = if (on) pending - fc.value else pending + fc.value },
+                            label = { Text(name + " · " + fc.afterInclude) },
+                        )
+                    } else ValueChip(fc, taxonomy, arabic, onPick)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(
+                    selected = multi,
+                    onClick = { multi = !multi; pending = emptySet() },
+                    label = { Text(tr("اختيار متعدد", "Multi-select")) },
+                )
+                if (multi) {
+                    Button(
+                        onClick = { onApplyMany(pending); pending = emptySet() },
+                        enabled = pending.isNotEmpty(),
+                        modifier = Modifier.padding(start = 8.dp),
+                    ) { Text(tr("التالي (${pending.size})", "Next (${pending.size})")) }
+                }
             }
             if (values.size > limit) TextButton(onClick = { limit += 14 }) { Text(tr("عرض المزيد", "Show more")) }
             Row(verticalAlignment = Alignment.CenterVertically) {

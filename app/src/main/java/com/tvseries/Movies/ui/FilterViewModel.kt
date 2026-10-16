@@ -87,6 +87,16 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         applySelection(if (_excludeMode.value) sel.toggleExclude(axis, value) else sel.toggleInclude(axis, value))
     }
 
+    /** Applies several values of one axis at once (multi-select question). */
+    fun applyMany(axis: String, values: Set<String>) {
+        var s = _state.value.selection
+        for (v in values) {
+            s = if (_excludeMode.value) { if (s.isExcluded(axis, v)) s else s.toggleExclude(axis, v) }
+            else { if (s.isIncluded(axis, v)) s else s.toggleInclude(axis, v) }
+        }
+        applySelection(s)
+    }
+
     fun toggleAvoid(opt: AvoidOption) = applySelection(opt.toggle(_state.value.selection))
 
     /** A random confirmed result ("surprise me"). */

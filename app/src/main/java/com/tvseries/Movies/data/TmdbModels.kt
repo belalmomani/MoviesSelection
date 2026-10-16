@@ -116,6 +116,23 @@ data class EpisodeDto(
 @Serializable
 data class SeasonDetailDto(val episodes: List<EpisodeDto> = emptyList())
 
+@Serializable
+data class ProviderDto(
+    @SerialName("provider_name") val name: String = "",
+    @SerialName("logo_path") val logoPath: String? = null,
+)
+
+@Serializable
+data class RegionProvidersDto(
+    val link: String? = null,
+    val flatrate: List<ProviderDto>? = null,
+    val rent: List<ProviderDto>? = null,
+    val buy: List<ProviderDto>? = null,
+)
+
+@Serializable
+data class WatchProvidersDto(val results: Map<String, RegionProvidersDto> = emptyMap())
+
 /** Movie or TV details, with optional appended credits / keywords / similar. */
 @Serializable
 data class DetailsDto(
@@ -152,6 +169,7 @@ data class DetailsDto(
     val credits: CreditsDto? = null,
     val keywords: KeywordsDto? = null,
     val similar: PageDto? = null,
+    @SerialName("watch/providers") val watchProviders: WatchProvidersDto? = null,
 )
 
 @Serializable
