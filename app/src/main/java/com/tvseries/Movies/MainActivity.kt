@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val container = (application as MoviesApp).container
         val startLang = LocaleHelper.savedLanguage(this)
+        val pickFromWatchlist = intent?.getBooleanExtra("pick", false) == true
         setContent {
             val lang by container.prefs.language.collectAsState()
             val theme by container.prefs.theme.collectAsState()
@@ -38,7 +39,7 @@ class MainActivity : ComponentActivity() {
                 LocalLang provides lang,
                 LocalLayoutDirection provides if (lang == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr,
             ) {
-                MoviesTheme(dark = dark) { MoviesRoot(container) }
+                MoviesTheme(dark = dark) { MoviesRoot(container, pickFromWatchlist) }
             }
         }
     }

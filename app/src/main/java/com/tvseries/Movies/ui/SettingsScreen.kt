@@ -2,7 +2,14 @@
 
 package com.tvseries.Movies.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalContext
+import com.tvseries.Movies.reminder.ReminderScheduler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,6 +62,14 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val historyOn by p.historyEnabled.collectAsState()
     val key by p.apiKey.collectAsState()
     val hideWatched by p.hideWatched.collectAsState()
+    val reminder by p.weeklyReminder.collectAsState()
+    val ctx = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            p.setWeeklyReminder(true)
+            ReminderScheduler.schedule(ctx)
+        }
+    }
     var keyInput by remember { mutableStateOf(key) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -91,6 +106,26 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
             tr("يُطبَّق على التحميل الجديد من TMDB. رفعه يقلل الأعمال المجهولة.", "Applies to new loads from TMDB. Raising it reduces obscure titles."),
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        HorizontalDivider()
+
+        Text(tr("التذكير الأسبوعي", "Weekly reminder"), style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = reminder,
+                onCheckedChange = { on ->
+                    if (!on) {
+                        p.setWeeklyReminder(false)
+                        ReminderScheduler.cancel(ctx)
+                    } else if (Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        p.setWeeklyReminder(true)
+                        ReminderScheduler.schedule(ctx)
+                    }
+                },
+            )
+            Text(tr("تذكير كل جمعة 6 مساءً بقائمة «شاهد لاحقًا» (معطّل افتراضيًا)", "Friday 6 pm reminder about your watch list (off by default)"), Modifier.padding(start = 8.dp))
+        }
         HorizontalDivider()
 
         Text(tr("سجل البحث", "Search history"), style = MaterialTheme.typography.titleSmall)

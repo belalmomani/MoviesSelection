@@ -80,6 +80,9 @@ class Prefs(private val store: KeyValueStore) {
     private val _hideWatched = MutableStateFlow(store.getString(K_HIDE_WATCHED) != "false")
     val hideWatched: StateFlow<Boolean> = _hideWatched.asStateFlow()
 
+    private val _weeklyReminder = MutableStateFlow(store.getString(K_REMINDER) == "true")
+    val weeklyReminder: StateFlow<Boolean> = _weeklyReminder.asStateFlow()
+
     private val _watchlist = MutableStateFlow(readCards(K_WATCH))
     val watchlist: StateFlow<List<WorkCard>> = _watchlist.asStateFlow()
 
@@ -99,6 +102,8 @@ class Prefs(private val store: KeyValueStore) {
         _watched.value = if (key in _watched.value) _watched.value - key else _watched.value + key
         store.putString(K_WATCHED, json.encodeToString(stringsSer, _watched.value.toList()))
     }
+
+    fun setWeeklyReminder(v: Boolean) { _weeklyReminder.value = v; store.putString(K_REMINDER, v.toString()) }
 
     fun setHideWatched(v: Boolean) { _hideWatched.value = v; store.putString(K_HIDE_WATCHED, v.toString()) }
 
@@ -166,6 +171,7 @@ class Prefs(private val store: KeyValueStore) {
         const val K_FAV = "favorites"
         const val K_WATCH = "watchlist"
         const val K_SELECTION = "last_selection"
+        const val K_REMINDER = "weekly_reminder"
         const val K_SAVED = "saved_filters"
         const val K_WATCHED = "watched"
         const val K_HIDE_WATCHED = "hide_watched"

@@ -36,6 +36,8 @@ object Routes {
     const val SETTINGS = "settings"
     const val ABOUT = "about"
     const val MOOD = "mood"
+    const val PARTY = "party"
+    const val COMPARE = "compare"
     const val DETAILS = "details/{type}/{id}"
     const val PERSON = "person/{id}"
     fun details(type: String, id: Int) = "details/$type/$id"
@@ -61,7 +63,7 @@ private fun NavHostController.goTab(route: String) {
 }
 
 @Composable
-fun MoviesRoot(container: AppContainer) {
+fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
@@ -69,6 +71,13 @@ fun MoviesRoot(container: AppContainer) {
     val openFilter: (Selection?) -> Unit = { sel ->
         if (sel != null) container.presetSelection = sel
         nav.goTab(Routes.FILTER)
+    }
+
+    androidx.compose.runtime.LaunchedEffect(pickFromWatchlist) {
+        if (pickFromWatchlist) {
+            val watched = container.prefs.watched.value
+            container.prefs.watchlist.value.filter { it.key !in watched }.randomOrNull()?.let(openCard)
+        }
     }
 
     Scaffold(
@@ -91,10 +100,15 @@ fun MoviesRoot(container: AppContainer) {
             composable(Routes.HOME) {
                 HomeScreen(
                     ads = container.ads, onOpen = openCard, onSearch = { nav.goTab(Routes.SEARCH) },
-                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) },
+                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onParty = { nav.navigate(Routes.PARTY) },
                 )
             }
-            composable(Routes.FILTER) { FilterScreen(onOpen = openCard) }
+            composable(Routes.FILTER) {
+                FilterScreen(onOpen = openCard, onCompare = { list ->
+                    container.compare.value = list.take(3)
+                    nav.navigate(Routes.COMPARE)
+                })
+            }
             composable(Routes.SEARCH) {
                 SearchScreen(onOpen = openCard, onPerson = { nav.navigate(Routes.person(it)) })
             }
@@ -103,6 +117,8 @@ fun MoviesRoot(container: AppContainer) {
             composable(Routes.MOOD) {
                 MoodScreen(onBack = { nav.popBackStack() }, onApply = { sel -> nav.popBackStack(); openFilter(sel) })
             }
+            composable(Routes.PARTY) { PartyScreen(onBack = { nav.popBackStack() }, onOpen = openCard) }
+            composable(Routes.COMPARE) { CompareScreen(container, onBack = { nav.popBackStack() }, onOpen = openCard) }
             composable(Routes.ABOUT) { AboutScreen(onBack = { nav.popBackStack() }) }
             composable(
                 Routes.DETAILS,
@@ -111,7 +127,7 @@ fun MoviesRoot(container: AppContainer) {
                 val type = be.arguments?.getString("type") ?: "movie"
                 val id = be.arguments?.getInt("id") ?: 0
                 DetailsScreen(
-                    ads = container.ads, media = type, id = id,
+                    ads = container.ads, container = container, onOpenCompare = { nav.navigate(Routes.COMPARE) }, media = type, id = id,
                     onBack = { nav.popBackStack() },
                     onOpen = openCard,
                     onPerson = { nav.navigate(Routes.person(it)) },

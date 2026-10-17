@@ -5,6 +5,8 @@ import android.content.Context
 import com.tvseries.Movies.ads.AdsModule
 import com.tvseries.Movies.ads.AdsProvider
 import com.tvseries.Movies.core.Selection
+import com.tvseries.Movies.data.WorkCard
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.tvseries.Movies.data.Prefs
 import com.tvseries.Movies.data.SharedPrefsStore
 import com.tvseries.Movies.data.TmdbClient
@@ -21,6 +23,14 @@ class AppContainer(app: Application) {
 
     /** One-shot selection handed from Home to the filter screen. */
     var presetSelection: Selection? = null
+
+    /** Titles chosen for side-by-side comparison (max 3). */
+    val compare = MutableStateFlow<List<WorkCard>>(emptyList())
+
+    fun toggleCompare(card: WorkCard) {
+        val cur = compare.value
+        compare.value = if (cur.any { it.key == card.key }) cur.filterNot { it.key == card.key } else (cur + card).takeLast(3)
+    }
 
     val hasBuiltInKey: Boolean get() = BuildConfig.TMDB_API_KEY.isNotBlank()
 

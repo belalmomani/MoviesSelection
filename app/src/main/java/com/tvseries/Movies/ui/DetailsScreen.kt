@@ -110,6 +110,8 @@ class DetailsViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun DetailsScreen(
     ads: AdsProvider,
+    container: com.tvseries.Movies.AppContainer,
+    onOpenCompare: () -> Unit,
     media: String,
     id: Int,
     onBack: () -> Unit,
@@ -125,6 +127,7 @@ fun DetailsScreen(
     val episodes by vm.episodes.collectAsState()
     val watchedKeys by vm.prefs.watched.collectAsState()
     val ctx = LocalContext.current
+    val cmp by container.compare.collectAsState()
     val arabic = isArabic()
     val expandedSeasons = remember { mutableStateMapOf<Int, Boolean>() }
 
@@ -203,6 +206,13 @@ fun DetailsScreen(
                                 }
                                 ctx.startActivity(Intent.createChooser(send, null))
                             }) { Text(tr("مشاركة", "Share")) }
+                            val inCompare = cmp.any { it.key == card.key }
+                            OutlinedButton(onClick = { container.toggleCompare(card) }) {
+                                Text(if (inCompare) tr("✓ في المقارنة", "✓ Comparing") else tr("⚖️ قارن", "⚖️ Compare"))
+                            }
+                            if (cmp.size >= 2) {
+                                OutlinedButton(onClick = onOpenCompare) { Text(tr("افتح المقارنة (${cmp.size})", "Open comparison (${cmp.size})")) }
+                            }
                         }
                     }
                     d.genres?.takeIf { it.isNotEmpty() }?.let { genres ->

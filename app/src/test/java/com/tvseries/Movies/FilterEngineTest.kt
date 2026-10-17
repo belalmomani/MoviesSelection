@@ -176,4 +176,29 @@ class FilterEngineTest {
         val bad = Taxonomy(listOf(node("x", Axes.GENRE, setOf("y")), node("y", Axes.GENRE, setOf("x"))))
         assertTrue(bad.validate().any { it.startsWith("cycle") })
     }
+
+    @Test fun partyModeIsIntersectionNotUnion() {
+        val a = Selection().toggleInclude(Axes.GENRE, "g.action")      // person 1
+        val b = Selection().toggleInclude(Axes.COUNTRY, "c.kr")        // person 2
+        val r = com.tvseries.Movies.core.PartyMatcher.intersect(works, a, b)
+        assertEquals(setOf("c"), r.confirmed.map { it.key }.toSet()) // action AND Korea
+        assertEquals(setOf("e"), r.possible.map { it.key }.toSet())  // action, country unknown
+        // person 2 dislikes Korea: only works not known to be Korean remain
+        val c = Selection().toggleExclude(Axes.COUNTRY, "c.kr")
+        val r2 = com.tvseries.Movies.core.PartyMatcher.intersect(works, a, c)
+        assertEquals(setOf("a"), r2.confirmed.map { it.key }.toSet())
+    }
+
+    @Test fun hiddenGemsNeedVotesAndAreNotRankedByRatingAlone() {
+        val g = com.tvseries.Movies.core.GemFinder
+        assertTrue(g.isGem(7.8, 8000))
+        assertFalse(g.isGem(7.9, 400000)) // too popular
+        assertFalse(g.isGem(9.0, 20))     // too few votes
+        assertTrue(g.score(7.8, 8000) > g.score(9.0, 20))
+    }
+
+    @Test fun intersectAllFindsSharedItems() {
+        assertEquals(setOf(2), com.tvseries.Movies.core.intersectAll(listOf(setOf(1, 2), setOf(2, 3), setOf(2))))
+        assertTrue(com.tvseries.Movies.core.intersectAll(emptyList<Set<Int>>()).isEmpty())
+    }
 }

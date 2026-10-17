@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.tvseries.Movies.core.Selection
 
 @Composable
-private fun ChoiceRow(title: String, choices: List<Presets.Choice>, selected: Presets.Choice?, onPick: (Presets.Choice?) -> Unit) {
+fun ChoiceRow(title: String, choices: List<Presets.Choice>, selected: Presets.Choice?, onPick: (Presets.Choice?) -> Unit) {
     Text(title, style = MaterialTheme.typography.titleSmall)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         choices.forEach { c ->

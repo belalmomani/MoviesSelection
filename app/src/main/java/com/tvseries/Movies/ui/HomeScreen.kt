@@ -43,6 +43,8 @@ import com.tvseries.Movies.ads.AdPlacement
 import com.tvseries.Movies.ads.AdsProvider
 import androidx.compose.foundation.layout.fillMaxSize
 import com.tvseries.Movies.core.Axes
+import com.tvseries.Movies.core.GemFinder
+import com.tvseries.Movies.data.ListItemDto
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.TmdbError
 import com.tvseries.Movies.data.WorkCard
@@ -77,6 +79,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         loadAll()
+        loadGems()
     }
 
     fun loadAll() {
@@ -98,6 +101,34 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     val savedFilters = c.prefs.savedFilters
 
+    private val _gems = MutableStateFlow<Load<List<WorkCard>>>(Load.Loading)
+    val gems: StateFlow<Load<List<WorkCard>>> = _gems.asStateFlow()
+
+    fun loadGems() {
+        viewModelScope.launch {
+            _gems.value = Load.Loading
+            _gems.value = try {
+                Load.Ok(fetchGems())
+            } catch (e: TmdbError) {
+                Load.Fail(e)
+            }
+        }
+    }
+
+    /** Well rated, moderately voted, not the most popular. Ranked by a vote-weighted score, not rating alone. */
+    private suspend fun fetchGems(): List<WorkCard> {
+        val q = c.repo.baseQuery().copy(minVotes = 1500, maxVotes = 20000, minRating = 7, sort = "vote_average.desc")
+        val items = ArrayList<Pair<String, ListItemDto>>()
+        for (media in listOf("movie", "tv")) for (page in 1..2) c.repo.discover(media, page, q).results.forEach { items += media to it }
+        val watched = c.prefs.watched.value
+        return items
+            .filter { (_, d) -> GemFinder.isGem(d.voteAverage ?: 0.0, d.voteCount ?: 0) }
+            .sortedByDescending { (_, d) -> GemFinder.score(d.voteAverage ?: 0.0, d.voteCount ?: 0) }
+            .mapNotNull { (m, d) -> d.toCard(m) }
+            .filter { it.key !in watched }
+            .take(24)
+    }
+
     fun savedConditionCount(): Int = c.prefs.loadSelection().conditions().size
 }
 
@@ -107,6 +138,7 @@ private fun preset(axis: String, value: String) = Selection(include = mapOf(axis
 fun HomeScreen(
     ads: AdsProvider,
     onMood: () -> Unit,
+    onParty: () -> Unit,
     onOpen: (WorkCard) -> Unit,
     onSearch: () -> Unit,
     onFilter: (Selection?) -> Unit,
@@ -151,6 +183,9 @@ fun HomeScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(tr("ابحث عن فيلم أو مسلسل أو شخص", "Search a movie, series or person"))
                 }
+                OutlinedButton(onClick = onParty, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("🎉 سهرة جماعية", "🎉 Group watch"))
+                }
                 OutlinedButton(onClick = onMood, modifier = Modifier.fillMaxWidth()) {
                     Text(tr("🎭 اختر لي حسب مزاجي", "🎭 Pick for my mood"))
                 }
@@ -178,6 +213,25 @@ fun HomeScreen(
             SectionTitle(tr("اكتشاف حسب الدولة واللغة", "Discover by country & language"))
             FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 regionPresets.forEach { (ar, en, sel) -> AssistChip(onClick = { onFilter(sel) }, label = { Text(tr(ar, en)) }) }
+            }
+        }
+        item {
+            val gems by vm.gems.collectAsState()
+            SectionTitle(tr("كنوز مخفية 💎", "Hidden gems 💎"))
+            Text(
+                tr(
+                    "تقييم 7+ وعدد أصوات متوسط (1,500–20,000): أعمال جيدة خارج دائرة الأكثر شهرة. الترتيب يوازن بين التقييم وعدد الأصوات ولا يعتمد على التقييم وحده.",
+                    "Rating 7+ with a moderate vote count (1,500–20,000): good titles outside the most popular. Ranking balances rating and votes, not rating alone.",
+                ),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+            when (val g = gems) {
+                is Load.Loading -> CenterLoading()
+                is Load.Fail -> ErrorBox(g.error, onRetry = { vm.loadGems() })
+                is Load.Ok -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(g.value, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
+                }
             }
         }
         items(vm.sections, key = { it.id }) { s ->

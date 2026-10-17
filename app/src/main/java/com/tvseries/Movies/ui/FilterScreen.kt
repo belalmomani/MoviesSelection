@@ -74,7 +74,7 @@ private fun questionTitle(axis: String, fallback: String): String = when (axis) 
 }
 
 @Composable
-fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) {
+fun FilterScreen(onOpen: (WorkCard) -> Unit, onCompare: (List<WorkCard>) -> Unit, vm: FilterViewModel = viewModel()) {
     val ui by vm.ui.collectAsState()
     val state by vm.state.collectAsState()
     val loading by vm.loading.collectAsState()
@@ -227,6 +227,14 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
             val showList = outcome !is Outcome.Single && outcome !is Outcome.NoResults && outcome !is Outcome.PoolEmpty
             if (showList) {
                 item { SectionTitle(tr("النتائج الحالية: ${u.result.matched.size}", "Current results: ${u.result.matched.size}")) }
+                if (u.result.matched.size in 2..3) {
+                    item {
+                        OutlinedButton(
+                            onClick = { onCompare(u.result.matched.mapNotNull { u.snapshot.cards[it.key] }) },
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                        ) { Text(tr("⚖️ قارن هذه الأعمال", "⚖️ Compare these titles")) }
+                    }
+                }
                 items(u.result.matched.take(40), key = { "m-" + it.key }) { w ->
                     u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }, badge = if (w.key in u.snapshot.wikidataKeys) tr("🌐 اكتُشف عبر Wikidata", "🌐 Found via Wikidata") else null) }
                 }
