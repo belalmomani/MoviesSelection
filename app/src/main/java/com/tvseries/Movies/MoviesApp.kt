@@ -9,12 +9,14 @@ import com.tvseries.Movies.data.Prefs
 import com.tvseries.Movies.data.SharedPrefsStore
 import com.tvseries.Movies.data.TmdbClient
 import com.tvseries.Movies.data.TmdbRepository
+import com.tvseries.Movies.data.WikidataClient
 
 class AppContainer(app: Application) {
     val prefs = Prefs(SharedPrefsStore(app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)))
     private val http = TmdbClient.buildHttp(app.cacheDir)
     val client = TmdbClient(http, { prefs.apiKey.value.ifBlank { BuildConfig.TMDB_API_KEY } })
     val repo = TmdbRepository(client, prefs)
+    val wikidata = WikidataClient(http)
     val ads: AdsProvider = AdsModule.provide(BuildConfig.START_IO_APP_ID)
 
     /** One-shot selection handed from Home to the filter screen. */

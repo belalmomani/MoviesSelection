@@ -17,6 +17,8 @@ import com.tvseries.Movies.data.PoolSnapshot
 import com.tvseries.Movies.data.ServerRefine
 import com.tvseries.Movies.data.TmdbError
 import com.tvseries.Movies.data.WorkPool
+import com.tvseries.Movies.data.Regions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -59,8 +61,26 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<TmdbError?>(null)
     val error: StateFlow<TmdbError?> = _error.asStateFlow()
 
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+
     private val _excludeMode = MutableStateFlow(false)
     val excludeMode: StateFlow<Boolean> = _excludeMode.asStateFlow()
+
+    val savedFilters = c.prefs.savedFilters
+
+    fun saveCurrent(name: String) = c.prefs.saveFilter(name, _state.value.selection)
+    fun deleteSaved(name: String) = c.prefs.deleteFilter(name)
+
+    /** Replaces the current selection (saved filter / preset) and loads matching titles. */
+    fun loadSelection(sel: Selection) {
+        _state.value = FilterState().apply(sel)
+        persistAndRefresh()
+        loadMore(refine = true)
+    }
+
+    /** Re-evaluates (e.g. after marking a title as watched elsewhere). */
+    fun refresh() = recompute()
 
     private val _skipped = MutableStateFlow<Set<String>>(emptySet())
     val skipped: StateFlow<Set<String>> = _skipped.asStateFlow()
@@ -122,9 +142,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     fun consumePreset() {
         val preset = c.presetSelection ?: return
         c.presetSelection = null
-        _state.value = FilterState().apply(preset)
-        persistAndRefresh()
-        loadMore(refine = true)
+        loadSelection(preset)
     }
 
     private fun applySelection(next: Selection) {
@@ -134,6 +152,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun persistAndRefresh() {
         _skipped.value = emptySet()
+        _notice.value = null
         c.prefs.saveSelection(_state.value.selection)
         recompute()
         val base = c.repo.baseQuery().signature()
@@ -165,17 +184,30 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
                 val sel = _state.value.selection
                 val base = c.repo.baseQuery()
                 for (media in mediaTypes(sel)) {
-                    val q = if (refine) {
-                        ServerRefine.refine(sel, snapshot.taxonomy, media, base) ?: continue
-                    } else base
-                    val s = pool.stream(media, q.signature())
-                    var pages = 0
-                    while (pages < PAGES_PER_LOAD && s.hasMore) {
-                        val page = c.repo.discover(media, s.nextPage, q)
-                        pool.addListItems(media, page.results)
-                        s.nextPage += 1
-                        s.totalPages = page.totalPages
-                        pages++
+                    val queries = if (refine) ServerRefine.refineAll(sel, snapshot.taxonomy, media, base) else listOf(base)
+                    val pagesEach = if (queries.size > 1) 1 else PAGES_PER_LOAD
+                    if (refine) {
+                        val iso = arabCountries(sel)
+                        if (iso.isNotEmpty()) {
+                            try {
+                                loadWikidata(media, iso)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                _notice.value = "wikidata"
+                            }
+                        }
+                    }
+                    for (q in queries) {
+                        val s = pool.stream(media, q.signature())
+                        var pages = 0
+                        while (pages < pagesEach && s.hasMore) {
+                            val page = c.repo.discover(media, s.nextPage, q)
+                            pool.addListItems(media, page.results, q.countries.singleOrNull())
+                            s.nextPage += 1
+                            s.totalPages = page.totalPages
+                            pages++
+                        }
                     }
                 }
             } catch (e: TmdbError) {
@@ -186,6 +218,32 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
                 recompute()
             }
         }
+    }
+
+    private fun arabCountries(sel: Selection): Set<String> {
+        val out = LinkedHashSet<String>()
+        for (v in sel.include[Axes.COUNTRY].orEmpty()) {
+            when {
+                v.startsWith("country.") -> out += v.removePrefix("country.")
+                v.startsWith("region.") -> out += Regions.members[v].orEmpty()
+            }
+        }
+        return out.filter { it in Regions.arab }.toSet()
+    }
+
+    /** Discovery of Arab productions through Wikidata, then full details from TMDB (no invented data). */
+    private suspend fun loadWikidata(media: String, iso: Set<String>) {
+        val s = pool.stream("wd-$media", "wd|" + iso.sorted())
+        if (!s.hasMore) return
+        val ids = c.wikidata.tmdbIds(media, iso, (s.nextPage - 1) * WD_PAGE, WD_PAGE)
+        s.nextPage += 1
+        if (ids.size < WD_PAGE) s.totalPages = s.nextPage - 1
+        val fresh = ids.filter { !pool.contains("$media:$it") }
+        val gate = Semaphore(4)
+        val fetched = coroutineScope {
+            fresh.map { id -> async { gate.withPermit { runCatching { c.repo.details(media, id) }.getOrNull() } } }.awaitAll()
+        }
+        for (d in fetched) if (d != null) pool.addDetails(media, d)
     }
 
     /** Fetches full details (country, runtime, seasons, status, keywords, cast...) for up to 20 shown works. */
@@ -231,10 +289,13 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         val snap = snapshot
         val sel = _state.value.selection
         val base = c.repo.baseQuery().signature()
+        val hide = c.prefs.hideWatched.value
+        val watchedKeys = c.prefs.watched.value
         val complete = mediaTypes(sel).all { !pool.stream(it, base).hasMore }
         recomputeJob = viewModelScope.launch {
             val built = withContext(Dispatchers.Default) {
-                val engine = FilterEngine(snap.works, snap.taxonomy, complete)
+                val visible = if (hide && watchedKeys.isNotEmpty()) snap.works.filter { it.key !in watchedKeys } else snap.works
+                val engine = FilterEngine(visible, snap.taxonomy, complete)
                 val result = engine.evaluate(sel)
                 val views = snap.taxonomy.axes
                     .associate { it.id to engine.axisView(sel, it.id, result) }
@@ -271,6 +332,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val PAGES_PER_LOAD = 2
+        const val WD_PAGE = 20
         const val ENRICH_BATCH = 20
         const val AUTO_ENRICH_BATCH = 30
         const val AUTO_REFINE_BELOW = 12

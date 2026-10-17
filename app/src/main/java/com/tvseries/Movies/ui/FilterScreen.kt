@@ -15,7 +15,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -80,12 +82,32 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
     val error by vm.error.collectAsState()
     val excludeMode by vm.excludeMode.collectAsState()
     val skipped by vm.skipped.collectAsState()
+    val notice by vm.notice.collectAsState()
     val arabic = isArabic()
 
-    LaunchedEffect(Unit) { vm.consumePreset() }
+    LaunchedEffect(Unit) {
+        vm.consumePreset()
+        vm.refresh()
+    }
+    val savedFilters by vm.savedFilters.collectAsState()
+    var showSave by remember { mutableStateOf(false) }
+    var showSaved by remember { mutableStateOf(false) }
+    var saveName by remember { mutableStateOf("") }
 
     val u = ui
     val sel = state.selection
+
+    if (showSave) {
+        AlertDialog(
+            onDismissRequest = { showSave = false },
+            title = { Text(tr("اسم التصفية", "Filter name")) },
+            text = { OutlinedTextField(value = saveName, onValueChange = { saveName = it }, singleLine = true) },
+            confirmButton = {
+                TextButton(onClick = { vm.saveCurrent(saveName); saveName = ""; showSave = false }, enabled = saveName.isNotBlank()) { Text(tr("حفظ", "Save")) }
+            },
+            dismissButton = { TextButton(onClick = { showSave = false }) { Text(tr("إلغاء", "Cancel")) } },
+        )
+    }
 
     LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
@@ -103,6 +125,25 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
                 Column(Modifier.padding(horizontal = 12.dp)) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         conds.forEach { cond -> ConditionChip(cond, u.snapshot.taxonomy, arabic) { vm.removeCondition(cond) } }
+                    }
+                }
+            }
+        }
+        item {
+            Column(Modifier.padding(horizontal = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { showSave = true }, enabled = !sel.isEmpty) { Text(tr("💾 حفظ التصفية", "💾 Save filter")) }
+                    TextButton(onClick = { showSaved = !showSaved }, enabled = savedFilters.isNotEmpty()) {
+                        Text(tr("تصفياتي (${savedFilters.size})", "My filters (${savedFilters.size})"))
+                    }
+                }
+                if (showSaved) {
+                    savedFilters.forEach { sf ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(sf.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            TextButton(onClick = { vm.loadSelection(sf.selection); showSaved = false }) { Text(tr("تطبيق", "Apply")) }
+                            TextButton(onClick = { vm.deleteSaved(sf.name) }) { Text(tr("حذف", "Delete")) }
+                        }
                     }
                 }
             }
@@ -132,6 +173,15 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
             }
         }
         error?.let { e -> item { ErrorBox(e, onRetry = { vm.loadMore(false) }) } }
+        notice?.let {
+            item {
+                Text(
+                    tr("تعذّر الاتصال بـ Wikidata؛ عُرضت نتائج TMDB فقط.", "Wikidata was unreachable; showing TMDB results only."),
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
+        }
 
         if (u == null) {
             item { CenterLoading() }

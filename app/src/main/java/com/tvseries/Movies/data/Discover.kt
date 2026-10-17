@@ -44,6 +44,29 @@ data class DiscoverQuery(
  * Everything is still re-checked client-side by the filter engine.
  */
 object ServerRefine {
+    private val arabPriority = listOf("EG", "SA", "SY", "JO", "LB", "AE", "KW", "IQ", "MA", "TN", "DZ", "PS")
+    private val arabSet = Regions.members["region.arab"].orEmpty().toSet()
+
+    /** Arabic productions have far fewer TMDB votes, so the usual vote threshold would hide most of them. */
+    private fun lowVotesForArabic(q: DiscoverQuery): DiscoverQuery =
+        if (q.language == "ar" || q.countries.any { it in arabSet }) q.copy(minVotes = minOf(q.minVotes, 5)) else q
+
+    /**
+     * One or more discover queries for the selection. Several countries are split into one query each
+     * (so each loaded title can be stamped with its country; list data has no country for movies), and
+     * Arab-region selections also add an "original language = Arabic" query.
+     */
+    fun refineAll(sel: Selection, taxonomy: Taxonomy, media: String, base: DiscoverQuery): List<DiscoverQuery> {
+        val q = lowVotesForArabic(refine(sel, taxonomy, media, base) ?: return emptyList())
+        if (q.countries.size <= 1) return listOf(q)
+        val ordered = if (q.countries.all { it in arabSet }) {
+            arabPriority.filter { it in q.countries } + q.countries.filter { it !in arabPriority }.sorted()
+        } else q.countries.sorted()
+        val out = ordered.take(8).map { q.copy(countries = setOf(it)) }.toMutableList()
+        if (q.language == null && q.countries.all { it in arabSet }) out += q.copy(countries = emptySet(), language = "ar")
+        return out
+    }
+
     /** Returns null when no work of [media] can possibly match the selected genres. */
     fun refine(sel: Selection, taxonomy: Taxonomy, media: String, base: DiscoverQuery): DiscoverQuery? {
         var q = base

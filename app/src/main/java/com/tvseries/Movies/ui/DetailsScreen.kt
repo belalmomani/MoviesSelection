@@ -45,7 +45,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import android.content.Intent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -121,6 +123,8 @@ fun DetailsScreen(
     val favorites by vm.prefs.favorites.collectAsState()
     val watchlist by vm.prefs.watchlist.collectAsState()
     val episodes by vm.episodes.collectAsState()
+    val watchedKeys by vm.prefs.watched.collectAsState()
+    val ctx = LocalContext.current
     val arabic = isArabic()
     val expandedSeasons = remember { mutableStateMapOf<Int, Boolean>() }
 
@@ -176,7 +180,7 @@ fun DetailsScreen(
                         }
                     }
                     item {
-                        Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilledTonalButton(onClick = { vm.prefs.toggleFavorite(card) }) {
                                 Icon(if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
@@ -187,6 +191,18 @@ fun DetailsScreen(
                                 if (inWatch) Spacer(Modifier.width(6.dp))
                                 Text(if (inWatch) tr("في قائمة المشاهدة", "In watch list") else tr("شاهد لاحقًا", "Watch later"))
                             }
+                            val seen = card.key in watchedKeys
+                            OutlinedButton(onClick = { vm.prefs.toggleWatched(card.key) }) {
+                                Text(if (seen) tr("✓ شاهدته", "✓ Watched") else tr("شاهدته؟", "Watched?"))
+                            }
+                            OutlinedButton(onClick = {
+                                val text = card.title + (card.year?.let { " ($it)" } ?: "") + "\nhttps://www.themoviedb.org/$media/$id"
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, text)
+                                }
+                                ctx.startActivity(Intent.createChooser(send, null))
+                            }) { Text(tr("مشاركة", "Share")) }
                         }
                     }
                     d.genres?.takeIf { it.isNotEmpty() }?.let { genres ->

@@ -21,6 +21,8 @@ object Regions {
         "region.africa" to listOf("ZA", "NG", "KE", "GH", "ET"),
     )
 
+    val arab: Set<String> get() = members["region.arab"].orEmpty().toSet()
+
     private val byCountry: Map<String, String> =
         members.flatMap { (region, codes) -> codes.map { it to region } }.toMap()
 

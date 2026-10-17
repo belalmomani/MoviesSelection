@@ -3,7 +3,10 @@
 package com.tvseries.Movies.ui
 
 import android.app.Application
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.res.painterResource
+import com.tvseries.Movies.R
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -93,6 +96,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    val savedFilters = c.prefs.savedFilters
+
     fun savedConditionCount(): Int = c.prefs.loadSelection().conditions().size
 }
 
@@ -108,6 +113,7 @@ fun HomeScreen(
     vm: HomeViewModel = viewModel(),
 ) {
     val saved = remember { vm.savedConditionCount() }
+    val savedFilters by vm.savedFilters.collectAsState()
     val typePresets = listOf(
         Triple("أفلام", "Movies", preset(Axes.FORMAT, "format.movie")),
         Triple("مسلسلات", "Series", preset(Axes.FORMAT, "format.tv")),
@@ -119,6 +125,8 @@ fun HomeScreen(
         Triple("خيال علمي", "Sci-Fi", preset(Axes.GENRE, "genre.878")),
     )
     val regionPresets = listOf(
+        Triple("مسلسلات عربية", "Arabic series", Selection(include = mapOf(Axes.FORMAT to setOf("format.tv"), Axes.COUNTRY to setOf("region.arab")))),
+        Triple("أفلام عربية", "Arabic films", Selection(include = mapOf(Axes.FORMAT to setOf("format.movie"), Axes.COUNTRY to setOf("region.arab")))),
         Triple("الدول العربية", "Arab world", preset(Axes.COUNTRY, "region.arab")),
         Triple("الأردن", "Jordan", preset(Axes.COUNTRY, "country.JO")),
         Triple("مصر", "Egypt", preset(Axes.COUNTRY, "country.EG")),
@@ -133,7 +141,11 @@ fun HomeScreen(
     LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("🎬 Movies Selection", style = MaterialTheme.typography.headlineSmall)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Movies Selection", style = MaterialTheme.typography.headlineSmall)
+                }
                 OutlinedButton(onClick = onSearch, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -147,6 +159,14 @@ fun HomeScreen(
                         if (saved > 0) tr("متابعة التصفية ($saved شرط)", "Continue filtering ($saved conditions)")
                         else tr("ابدأ التصفية الذكية", "Start smart filtering"),
                     )
+                }
+            }
+        }
+        if (savedFilters.isNotEmpty()) {
+            item {
+                SectionTitle(tr("تصفياتي المحفوظة", "My saved filters"))
+                FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    savedFilters.forEach { sf -> AssistChip(onClick = { onFilter(sf.selection) }, label = { Text(sf.name) }) }
                 }
             }
         }

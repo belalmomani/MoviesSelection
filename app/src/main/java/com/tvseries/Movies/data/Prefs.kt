@@ -5,9 +5,13 @@ import com.tvseries.Movies.core.Selection
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+
+@Serializable
+data class SavedFilter(val name: String, val selection: Selection)
 
 /** Tiny key/value abstraction so settings logic can be unit-tested without Android. */
 interface KeyValueStore {
@@ -63,8 +67,40 @@ class Prefs(private val store: KeyValueStore) {
     private val _favorites = MutableStateFlow(readCards(K_FAV))
     val favorites: StateFlow<List<WorkCard>> = _favorites.asStateFlow()
 
+    private val savedSer = ListSerializer(SavedFilter.serializer())
+
+    private val _saved = MutableStateFlow(
+        runCatching { store.getString(K_SAVED)?.let { json.decodeFromString(savedSer, it) } }.getOrNull() ?: emptyList(),
+    )
+    val savedFilters: StateFlow<List<SavedFilter>> = _saved.asStateFlow()
+
+    private val _watched = MutableStateFlow(readStrings(K_WATCHED).toSet())
+    val watched: StateFlow<Set<String>> = _watched.asStateFlow()
+
+    private val _hideWatched = MutableStateFlow(store.getString(K_HIDE_WATCHED) != "false")
+    val hideWatched: StateFlow<Boolean> = _hideWatched.asStateFlow()
+
     private val _watchlist = MutableStateFlow(readCards(K_WATCH))
     val watchlist: StateFlow<List<WorkCard>> = _watchlist.asStateFlow()
+
+    fun saveFilter(name: String, sel: Selection) {
+        val n = name.trim()
+        if (n.isEmpty() || sel.isEmpty) return
+        _saved.value = listOf(SavedFilter(n, sel)) + _saved.value.filterNot { it.name == n }
+        store.putString(K_SAVED, json.encodeToString(savedSer, _saved.value))
+    }
+
+    fun deleteFilter(name: String) {
+        _saved.value = _saved.value.filterNot { it.name == name }
+        store.putString(K_SAVED, json.encodeToString(savedSer, _saved.value))
+    }
+
+    fun toggleWatched(key: String) {
+        _watched.value = if (key in _watched.value) _watched.value - key else _watched.value + key
+        store.putString(K_WATCHED, json.encodeToString(stringsSer, _watched.value.toList()))
+    }
+
+    fun setHideWatched(v: Boolean) { _hideWatched.value = v; store.putString(K_HIDE_WATCHED, v.toString()) }
 
     fun setLanguage(v: String) { _language.value = v; store.putString(K_LANG, v) }
     fun setTheme(v: String) { _theme.value = v; store.putString(K_THEME, v) }
@@ -130,5 +166,8 @@ class Prefs(private val store: KeyValueStore) {
         const val K_FAV = "favorites"
         const val K_WATCH = "watchlist"
         const val K_SELECTION = "last_selection"
+        const val K_SAVED = "saved_filters"
+        const val K_WATCHED = "watched"
+        const val K_HIDE_WATCHED = "hide_watched"
     }
 }

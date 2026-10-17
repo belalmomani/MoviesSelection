@@ -55,6 +55,42 @@ class DataLayerTest {
         assertEquals(sel, p2.loadSelection())
     }
 
+    @Test fun savedFiltersAndWatchedPersist() {
+        val store = MemoryStore()
+        val p1 = Prefs(store)
+        val sel = Selection().toggleInclude(Axes.GENRE, "genre.35")
+        p1.saveFilter("ليلة الجمعة", sel)
+        p1.toggleWatched("movie:1")
+        assertTrue(p1.hideWatched.value) // default on
+        val p2 = Prefs(store)
+        assertEquals(sel, p2.savedFilters.value.single().selection)
+        assertEquals("ليلة الجمعة", p2.savedFilters.value.single().name)
+        assertTrue("movie:1" in p2.watched.value)
+        p2.deleteFilter("ليلة الجمعة")
+        assertTrue(Prefs(store).savedFilters.value.isEmpty())
+    }
+
+    @Test fun arabSelectionSplitsIntoCountryQueriesWithLowVoteThreshold() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleInclude(Axes.COUNTRY, "region.arab")
+        val qs = ServerRefine.refineAll(sel, t, "tv", DiscoverQuery(minVotes = 100))
+        assertTrue(qs.size > 2)
+        assertTrue(qs.all { it.minVotes <= 5 })
+        assertTrue(qs.any { it.language == "ar" && it.countries.isEmpty() })
+        assertTrue(qs.filter { it.countries.isNotEmpty() }.all { it.countries.size == 1 })
+        // a non-Arab selection keeps the normal vote threshold
+        val kr = ServerRefine.refineAll(Selection().toggleInclude(Axes.COUNTRY, "country.KR"), t, "tv", DiscoverQuery(minVotes = 100))
+        assertEquals(100, kr.single().minVotes)
+    }
+
+    @Test fun countryStampedWhenQueryHasSingleCountry() {
+        val pool = com.tvseries.Movies.data.WorkPool()
+        pool.addListItems("movie", listOf(ListItemDto(id = 7, title = "x", genreIds = listOf(18))), "JO")
+        val w = pool.snapshot().works.single()
+        assertTrue("country.JO" in w.facets[Axes.COUNTRY]!!)
+        assertTrue("region.arab" in w.facets[Axes.COUNTRY]!!) // parent via hierarchy
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")
@@ -153,6 +189,28 @@ class DataLayerTest {
 
     private fun client(server: MockWebServer, key: String = "k") =
         TmdbClient(OkHttpClient(), { key }, server.url("/3/").toString())
+
+    @Test fun wikidataQueryAndParsing() = runBlocking {
+        val s = MockWebServer()
+        s.enqueue(MockResponse().setBody("""{"results":{"bindings":[{"tmdb":{"value":"123"}},{"tmdb":{"value":"456"}},{"tmdb":{"value":"abc"}}]}}"""))
+        s.start()
+        val wd = com.tvseries.Movies.data.WikidataClient(OkHttpClient(), s.url("/sparql").toString())
+        val ids = wd.tmdbIds("tv", setOf("EG", "JO"), 0, 20)
+        assertEquals(listOf(123, 456), ids)
+        val q = wd.buildQuery("tv", setOf("EG", "JO"), 40, 20)
+        assertTrue(q.contains("P4983") && q.contains("\"EG\" \"JO\"") && q.contains("OFFSET 40"))
+        assertTrue(wd.buildQuery("movie", setOf("EG"), 0, 5).contains("P4947"))
+        val req = s.takeRequest()
+        assertTrue(req.getHeader("User-Agent")!!.startsWith("MoviesSelection"))
+        s.enqueue(MockResponse().setResponseCode(500))
+        try {
+            wd.tmdbIds("tv", setOf("EG"), 0, 20)
+            error("expected failure")
+        } catch (e: com.tvseries.Movies.data.WikidataException) {
+            assertTrue(e.message!!.contains("500"))
+        }
+        s.shutdown()
+    }
 
     @Test fun clientParsesPage() = runBlocking {
         val s = MockWebServer()

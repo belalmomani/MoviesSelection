@@ -29,16 +29,24 @@ class WorkPool {
 
     val size: Int get() = raw.size
     fun stream(media: String, signature: String): StreamState = streams.getOrPut("$media|$signature") { StreamState() }
+    fun contains(key: String): Boolean = key in raw
     fun isEnriched(key: String): Boolean = key in enriched
     fun card(key: String): WorkCard? = cards[key]
 
-    fun addListItems(media: String, items: List<ListItemDto>): Int {
+    /** [stampCountry]: the query was filtered to exactly this country, so every returned title has it. */
+    fun addListItems(media: String, items: List<ListItemDto>, stampCountry: String? = null): Int {
         var added = 0
         for (d in items) {
             val card = d.toCard(media) ?: continue
             if (card.key in raw) continue
             val m = WorkMapper.fromListItem(media, d)
-            raw[card.key] = m.work
+            var work = m.work
+            if (stampCountry != null && Axes.COUNTRY !in work.facets) {
+                val node = NodeFactory.country(stampCountry)
+                nodes.putIfAbsent(node.id, node)
+                work = work.copy(facets = work.facets + (Axes.COUNTRY to setOf(node.id)))
+            }
+            raw[card.key] = work
             cards[card.key] = card
             for (n in m.nodes) nodes.putIfAbsent(n.id, n)
             added++

@@ -54,6 +54,7 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val minVotes by p.minVotes.collectAsState()
     val historyOn by p.historyEnabled.collectAsState()
     val key by p.apiKey.collectAsState()
+    val hideWatched by p.hideWatched.collectAsState()
     var keyInput by remember { mutableStateOf(key) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -74,6 +75,10 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Switch(checked = adult, onCheckedChange = { p.setShowAdult(it) })
             Text(tr("إظهار المحتوى المخصص للبالغين (مغلق افتراضيًا)", "Show adult content (off by default)"), Modifier.padding(start = 8.dp))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = hideWatched, onCheckedChange = { p.setHideWatched(it) })
+            Text(tr("إخفاء الأعمال التي شاهدتها من نتائج التصفية", "Hide titles I have watched from filter results"), Modifier.padding(start = 8.dp))
         }
         Text(tr("الحد الأدنى لعدد المصوّتين عند تحميل الأعمال:", "Minimum vote count when loading titles:"), style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
