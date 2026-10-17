@@ -228,7 +228,7 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
             if (showList) {
                 item { SectionTitle(tr("النتائج الحالية: ${u.result.matched.size}", "Current results: ${u.result.matched.size}")) }
                 items(u.result.matched.take(40), key = { "m-" + it.key }) { w ->
-                    u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }) }
+                    u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }, badge = if (w.key in u.snapshot.wikidataKeys) tr("🌐 اكتُشف عبر Wikidata", "🌐 Found via Wikidata") else null) }
                 }
             }
             if (u.result.possible.isNotEmpty() && outcome !is Outcome.Single) {
@@ -236,7 +236,7 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, vm: FilterViewModel = viewModel()) 
                     SectionTitle(tr("قد تطابق (بياناتها ناقصة): ${u.result.possible.size}", "Might match (missing data): ${u.result.possible.size}"))
                 }
                 items(u.result.possible.take(15), key = { "p-" + it.key }) { w ->
-                    u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }) }
+                    u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }, badge = if (w.key in u.snapshot.wikidataKeys) tr("🌐 اكتُشف عبر Wikidata", "🌐 Found via Wikidata") else null) }
                 }
             }
 

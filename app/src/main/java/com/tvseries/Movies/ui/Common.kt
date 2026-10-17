@@ -75,7 +75,7 @@ fun PosterCard(card: WorkCard, onClick: () -> Unit, modifier: Modifier = Modifie
 }
 
 @Composable
-fun WorkRow(card: WorkCard, onClick: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
+fun WorkRow(card: WorkCard, onClick: () -> Unit, badge: String? = null, trailing: (@Composable () -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -92,6 +92,7 @@ fun WorkRow(card: WorkCard, onClick: () -> Unit, trailing: (@Composable () -> Un
             val type = if (card.mediaType == "movie") tr("فيلم", "Movie") else tr("مسلسل", "TV")
             val meta = listOfNotNull(type, card.year, card.rating?.let { "★ " + fmt1(it) + (card.votes?.let { v -> " ($v)" } ?: "") })
             Text(meta.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (badge != null) Text(badge, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         }
         trailing?.invoke()
     }

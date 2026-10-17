@@ -243,7 +243,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         val fetched = coroutineScope {
             fresh.map { id -> async { gate.withPermit { runCatching { c.repo.details(media, id) }.getOrNull() } } }.awaitAll()
         }
-        for (d in fetched) if (d != null) pool.addDetails(media, d)
+        for (d in fetched) if (d != null) pool.addDetails(media, d, fromWikidata = true)
     }
 
     /** Fetches full details (country, runtime, seasons, status, keywords, cast...) for up to 20 shown works. */

@@ -10,6 +10,7 @@ data class PoolSnapshot(
     val cards: Map<String, WorkCard>,
     val taxonomy: Taxonomy,
     val enrichedKeys: Set<String>,
+    val wikidataKeys: Set<String> = emptySet(),
 )
 
 class StreamState(var nextPage: Int = 1, var totalPages: Int = Int.MAX_VALUE) {
@@ -24,6 +25,7 @@ class WorkPool {
     private val nodes = LinkedHashMap<String, TaxonomyNode>().apply { TaxonomySeed.nodes().forEach { put(it.id, it) } }
     private val raw = LinkedHashMap<String, Work>()
     private val enriched = HashSet<String>()
+    private val viaWikidata = HashSet<String>()
     private val cards = LinkedHashMap<String, WorkCard>()
     private val streams = HashMap<String, StreamState>()
 
@@ -54,17 +56,18 @@ class WorkPool {
         return added
     }
 
-    fun addDetails(media: String, d: DetailsDto) {
+    fun addDetails(media: String, d: DetailsDto, fromWikidata: Boolean = false) {
         val card = d.toCard(media)
         val m = WorkMapper.fromDetails(media, d)
         raw[card.key] = m.work
         cards[card.key] = card
         enriched += card.key
+        if (fromWikidata) viaWikidata += card.key
         for (n in m.nodes) nodes.putIfAbsent(n.id, n)
     }
 
     fun snapshot(): PoolSnapshot {
         val taxonomy = Taxonomy(nodes.values, Axes.all)
-        return PoolSnapshot(raw.values.map { it.expanded(taxonomy) }, cards.toMap(), taxonomy, enriched.toSet())
+        return PoolSnapshot(raw.values.map { it.expanded(taxonomy) }, cards.toMap(), taxonomy, enriched.toSet(), viaWikidata.toSet())
     }
 }
