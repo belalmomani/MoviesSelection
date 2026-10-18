@@ -9,8 +9,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import java.io.File
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import com.tvseries.Movies.ui.CrashScreen
 import com.tvseries.Movies.ui.LocalLang
 import com.tvseries.Movies.ui.MoviesRoot
 import com.tvseries.Movies.ui.MoviesTheme
@@ -39,7 +44,18 @@ class MainActivity : ComponentActivity() {
                 LocalLang provides lang,
                 LocalLayoutDirection provides if (lang == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr,
             ) {
-                MoviesTheme(dark = dark) { MoviesRoot(container, pickFromWatchlist) }
+                MoviesTheme(dark = dark) {
+                    var crash by remember { mutableStateOf(runCatching { File(filesDir, CRASH_FILE).takeIf { it.exists() }?.readText() }.getOrNull()) }
+                    val c = crash
+                    if (c != null) {
+                        CrashScreen(c) {
+                            runCatching { File(filesDir, CRASH_FILE).delete() }
+                            crash = null
+                        }
+                    } else {
+                        MoviesRoot(container, pickFromWatchlist)
+                    }
+                }
             }
         }
     }

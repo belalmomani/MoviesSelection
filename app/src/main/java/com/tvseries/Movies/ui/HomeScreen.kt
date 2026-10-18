@@ -77,11 +77,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val flows = sections.associate { it.id to MutableStateFlow<Load<List<WorkCard>>>(Load.Loading) }
     fun flow(id: String): StateFlow<Load<List<WorkCard>>> = flows.getValue(id).asStateFlow()
 
-    init {
-        loadAll()
-        loadGems()
-    }
-
     fun loadAll() {
         for (s in sections) load(s)
     }
@@ -125,11 +120,18 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             .filter { (_, d) -> GemFinder.isGem(d.voteAverage ?: 0.0, d.voteCount ?: 0) }
             .sortedByDescending { (_, d) -> GemFinder.score(d.voteAverage ?: 0.0, d.voteCount ?: 0) }
             .mapNotNull { (m, d) -> d.toCard(m) }
+            .distinctBy { it.key }
             .filter { it.key !in watched }
             .take(24)
     }
 
     fun savedConditionCount(): Int = c.prefs.loadSelection().conditions().size
+
+    // Must stay LAST: it runs after every property above is initialised.
+    init {
+        loadAll()
+        loadGems()
+    }
 }
 
 private fun preset(axis: String, value: String) = Selection(include = mapOf(axis to setOf(value)))

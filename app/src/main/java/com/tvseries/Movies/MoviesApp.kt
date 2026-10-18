@@ -39,13 +39,21 @@ class AppContainer(app: Application) {
     }
 }
 
+const val CRASH_FILE = "last_crash.txt"
+
 class MoviesApp : Application() {
     lateinit var container: AppContainer
         private set
 
     override fun onCreate() {
         super.onCreate()
+        // Save any crash to a file so the next launch can show it (phone-only debugging).
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching { java.io.File(filesDir, CRASH_FILE).writeText(android.util.Log.getStackTraceString(e)) }
+            previous?.uncaughtException(t, e)
+        }
         container = AppContainer(this)
-        container.ads.initialize(this)
+        runCatching { container.ads.initialize(this) }
     }
 }

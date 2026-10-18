@@ -141,5 +141,8 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun BannerSlot(ads: AdsProvider, placement: AdPlacement) {
     if (!ads.canShowAt(placement, userIsFiltering = false)) return
-    AndroidView(factory = { ctx -> ads.createBanner(ctx) ?: View(ctx) }, modifier = Modifier.fillMaxWidth())
+    AndroidView(
+        factory = { ctx -> runCatching { ads.createBanner(ctx) }.getOrNull() ?: View(ctx) },
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
