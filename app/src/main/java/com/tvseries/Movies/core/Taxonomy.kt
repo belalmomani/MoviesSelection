@@ -28,9 +28,11 @@ object Axes {
     const val TENSION = "tension"
     const val ENDING = "ending"
     const val AVOID = "avoid"
+    const val WORLD = "world"
 
     val all: List<AxisDef> = listOf(
         AxisDef(FORMAT, "نوع العمل", "Type"),
+        AxisDef(WORLD, "عالم السينما", "Cinema world"),
         AxisDef(MOOD, "المزاج المناسب", "Mood"),
         AxisDef(TENSION, "مستوى التوتر", "Tension level"),
         AxisDef(GENRE, "النوع", "Genre"),

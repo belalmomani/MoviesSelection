@@ -27,6 +27,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import com.tvseries.Movies.core.Axes
+import com.tvseries.Movies.core.Taxonomy
+import com.tvseries.Movies.core.Traits
+import com.tvseries.Movies.core.Work
 import android.view.View
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tvseries.Movies.ads.AdPlacement
@@ -145,4 +153,26 @@ fun BannerSlot(ads: AdsProvider, placement: AdPlacement) {
         factory = { ctx -> runCatching { ads.createBanner(ctx) }.getOrNull() ?: View(ctx) },
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+@Composable
+fun BackHeader(title: String, onBack: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("رجوع", "Back")) }
+        Text(title, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+fun workGenreNames(w: Work, t: Taxonomy, arabic: Boolean): String =
+    w.facets[Axes.GENRE].orEmpty().mapNotNull { t.node(it)?.name(arabic) }.joinToString(if (arabic) "، " else ", ")
+
+/** Content hints estimated from genres only; shown even when titles are hidden. */
+@Composable
+fun contentNote(w: Work): String? {
+    val ids = Traits.genreIds(w)
+    val n = ArrayList<String>()
+    if (27 in ids) n += tr("رعب", "horror")
+    if (10752 in ids || 10768 in ids) n += tr("عنف حربي محتمل", "possible war violence")
+    if (80 in ids || 53 in ids) n += tr("توتر أو عنف محتمل", "possible tension or violence")
+    return if (n.isEmpty()) null else tr("تنبيه (تقدير من النوع): ", "Heads-up (estimated from genre): ") + n.joinToString(" · ")
 }

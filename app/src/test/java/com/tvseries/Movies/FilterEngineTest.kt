@@ -201,4 +201,35 @@ class FilterEngineTest {
         assertEquals(setOf(2), com.tvseries.Movies.core.intersectAll(listOf(setOf(1, 2), setOf(2, 3), setOf(2))))
         assertTrue(com.tvseries.Movies.core.intersectAll(emptyList<Set<Int>>()).isEmpty())
     }
+
+    @Test fun rouletteOnlyDrawsQualifiedTitlesAndDoorsAreDistinct() {
+        val intent = com.tvseries.Movies.core.UserIntent(selection = Selection().toggleInclude(Axes.GENRE, "g.action"))
+        val ranked = com.tvseries.Movies.core.Ranker.rank(works, intent, com.tvseries.Movies.core.TasteProfile())
+        assertEquals(setOf("a", "c", "e"), ranked.map { it.work.key }.toSet()) // violating titles never enter
+        val rnd = kotlin.random.Random(1)
+        repeat(300) {
+            val w = com.tvseries.Movies.core.Roulette.draw(ranked, rnd)!!
+            assertTrue(w.work.key in setOf("a", "c", "e"))
+        }
+        assertTrue(com.tvseries.Movies.core.Roulette.draw(emptyList(), rnd) == null)
+        val doors = com.tvseries.Movies.core.Doors.choose(ranked, setOf("e"), rnd)
+        val keys = listOf(doors.closest, doors.surprise, doors.safe).map { it!!.work.key }
+        assertEquals(3, keys.toSet().size)
+        assertEquals("e", doors.safe!!.work.key) // the enriched (most verifiable) one
+    }
+
+    @Test fun traitFitAndLearnedTaste() {
+        val T = com.tvseries.Movies.core.Traits
+        val horror = T.fromGenres(listOf(27))!!
+        val comedy = T.fromGenres(listOf(35))!!
+        val intent = com.tvseries.Movies.core.UserIntent(tension = 0.8)
+        assertTrue(com.tvseries.Movies.core.Ranker.fit(horror, intent) > com.tvseries.Movies.core.Ranker.fit(comedy, intent))
+        assertEquals(0.5, com.tvseries.Movies.core.Ranker.fit(null, intent), 1e-9) // unknown genres -> neutral
+        var taste = com.tvseries.Movies.core.TasteProfile()
+        taste = taste.update(listOf(27, 53), "movie:1", false, setOf("violent"))
+        taste = taste.update(listOf(35), "movie:2", true, emptySet())
+        assertTrue(taste.score(listOf(27), null) < -0.5)
+        assertTrue(taste.score(listOf(35), null) > 0.5)
+        assertEquals(setOf("movie:1", "movie:2"), taste.seen())
+    }
 }

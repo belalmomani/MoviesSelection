@@ -51,12 +51,12 @@ import com.tvseries.Movies.data.WorkCard
 
 /** Axes asked first in the guided flow. Others (cast, director, spoken languages) are only a fallback. */
 private val primaryAxes = setOf(
-    Axes.FORMAT, Axes.MOOD, Axes.TENSION, Axes.GENRE, Axes.COUNTRY, Axes.LANGUAGE, Axes.YEAR, Axes.RATING,
+    Axes.FORMAT, Axes.WORLD, Axes.MOOD, Axes.TENSION, Axes.GENRE, Axes.COUNTRY, Axes.LANGUAGE, Axes.YEAR, Axes.RATING,
     Axes.RUNTIME, Axes.SEASONS, Axes.STATUS, Axes.KEYWORD,
 )
 
 @Composable
-private fun questionTitle(axis: String, fallback: String): String = when (axis) {
+internal fun questionTitle(axis: String, fallback: String): String = when (axis) {
     Axes.FORMAT -> tr("ما نوع العمل؟", "What kind of title?")
     Axes.GENRE -> tr("ما النوع الذي تفضّله؟", "Which genre?")
     Axes.COUNTRY -> tr("من أي بلد؟", "From which country?")
@@ -67,6 +67,7 @@ private fun questionTitle(axis: String, fallback: String): String = when (axis) 
     Axes.SEASONS -> tr("كم عدد المواسم؟", "How many seasons?")
     Axes.STATUS -> tr("ما حالة العمل؟", "Status?")
     Axes.KEYWORD -> tr("أي موضوع؟", "Which topic?")
+    Axes.WORLD -> tr("أي عالم سينمائي؟", "Which cinema world?")
     Axes.MOOD -> tr("ماذا تريد أن يفعل بك العمل؟", "What should it do for you?")
     Axes.TENSION -> tr("ما مستوى التوتر؟", "How tense?")
     Axes.ENDING -> tr("أي نهاية؟", "Which ending?")

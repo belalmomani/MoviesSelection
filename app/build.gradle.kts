@@ -23,8 +23,8 @@ android {
         applicationId = "com.tvseries.Movies"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.3.0"
 
         // The TMDB key is NEVER stored in the repository. It is read from a Gradle property
         // or the TMDB_API_KEY environment variable (GitHub Actions secret). Empty = the user

@@ -2,6 +2,8 @@ package com.tvseries.Movies.data
 
 import android.content.SharedPreferences
 import com.tvseries.Movies.core.Selection
+import com.tvseries.Movies.core.TasteProfile
+import com.tvseries.Movies.core.UserIntent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +82,16 @@ class Prefs(private val store: KeyValueStore) {
     private val _hideWatched = MutableStateFlow(store.getString(K_HIDE_WATCHED) != "false")
     val hideWatched: StateFlow<Boolean> = _hideWatched.asStateFlow()
 
+    private val _intent = MutableStateFlow(
+        runCatching { store.getString(K_INTENT)?.let { json.decodeFromString(UserIntent.serializer(), it) } }.getOrNull() ?: UserIntent(),
+    )
+    val intent: StateFlow<UserIntent> = _intent.asStateFlow()
+
+    private val _taste = MutableStateFlow(
+        runCatching { store.getString(K_TASTE)?.let { json.decodeFromString(TasteProfile.serializer(), it) } }.getOrNull() ?: TasteProfile(),
+    )
+    val taste: StateFlow<TasteProfile> = _taste.asStateFlow()
+
     private val _weeklyReminder = MutableStateFlow(store.getString(K_REMINDER) == "true")
     val weeklyReminder: StateFlow<Boolean> = _weeklyReminder.asStateFlow()
 
@@ -101,6 +113,16 @@ class Prefs(private val store: KeyValueStore) {
     fun toggleWatched(key: String) {
         _watched.value = if (key in _watched.value) _watched.value - key else _watched.value + key
         store.putString(K_WATCHED, json.encodeToString(stringsSer, _watched.value.toList()))
+    }
+
+    fun setIntent(i: UserIntent) {
+        _intent.value = i
+        store.putString(K_INTENT, json.encodeToString(UserIntent.serializer(), i))
+    }
+
+    fun setTaste(t: TasteProfile) {
+        _taste.value = t
+        store.putString(K_TASTE, json.encodeToString(TasteProfile.serializer(), t))
     }
 
     fun setWeeklyReminder(v: Boolean) { _weeklyReminder.value = v; store.putString(K_REMINDER, v.toString()) }
@@ -171,6 +193,8 @@ class Prefs(private val store: KeyValueStore) {
         const val K_FAV = "favorites"
         const val K_WATCH = "watchlist"
         const val K_SELECTION = "last_selection"
+        const val K_INTENT = "user_intent"
+        const val K_TASTE = "taste_profile"
         const val K_REMINDER = "weekly_reminder"
         const val K_SAVED = "saved_filters"
         const val K_WATCHED = "watched"

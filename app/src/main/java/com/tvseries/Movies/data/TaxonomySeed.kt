@@ -210,6 +210,7 @@ object TaxonomySeed {
         out += est("avoid.gore", Axes.AVOID, "مشاهد دموية", "Gore / blood", 0.7)
         out += est("avoid.school", Axes.AVOID, "قصص مدرسية", "School stories", 0.7)
         out += est("avoid.sad_ending", Axes.AVOID, "نهاية حزينة", "Sad ending (avoid)", 0.7)
+        out += Worlds.nodes()
         return out
     }
 }

@@ -55,6 +55,18 @@ class DataLayerTest {
         assertEquals(sel, p2.loadSelection())
     }
 
+    @Test fun intentAndTastePersist() {
+        val store = MemoryStore()
+        val p1 = Prefs(store)
+        val intent = com.tvseries.Movies.core.UserIntent(0.5, null, -0.3, Selection().toggleExclude(Axes.AVOID, "avoid.gore"))
+        p1.setIntent(intent)
+        p1.setTaste(com.tvseries.Movies.core.TasteProfile().update(listOf(35), "movie:9", true, emptySet()))
+        val p2 = Prefs(store)
+        assertEquals(intent, p2.intent.value)
+        assertEquals(listOf("movie:9"), p2.taste.value.accepted)
+        assertEquals(1.0, p2.taste.value.genre[35]!!, 1e-9)
+    }
+
     @Test fun savedFiltersAndWatchedPersist() {
         val store = MemoryStore()
         val p1 = Prefs(store)
@@ -89,6 +101,18 @@ class DataLayerTest {
         val w = pool.snapshot().works.single()
         assertTrue("country.JO" in w.facets[Axes.COUNTRY]!!)
         assertTrue("region.arab" in w.facets[Axes.COUNTRY]!!) // parent via hierarchy
+    }
+
+    @Test fun cinemaWorldsFromGenresAndKeywords() {
+        val w = com.tvseries.Movies.data.Worlds
+        assertTrue("world.crime_mystery.detective" in w.tags(listOf(80, 9648), null))
+        assertFalse("world.crime_mystery.underworld" in w.tags(listOf(80, 9648), null))
+        assertTrue("world.future_sf.time_travel" in w.tags(listOf(878), listOf("Time Travel")))
+        assertFalse("world.future_sf.time_travel" in w.tags(listOf(878), null)) // unknown keywords -> not tagged
+        val work = WorkMapper.fromListItem("movie", ListItemDto(id = 1, title = "x", genreIds = listOf(35, 10749))).work
+        assertTrue("world.comedy_light.romcom" in work.facets[Axes.WORLD]!!)
+        val t = Taxonomy(TaxonomySeed.nodes())
+        assertTrue("world.comedy_light" in t.closure(setOf("world.comedy_light.romcom")))
     }
 
     @Test fun historyIsOffByDefault() {

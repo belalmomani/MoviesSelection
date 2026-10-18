@@ -7,6 +7,7 @@ import com.tvseries.Movies.ads.AdsProvider
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.WorkCard
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.tvseries.Movies.data.DiscoverSession
 import com.tvseries.Movies.data.Prefs
 import com.tvseries.Movies.data.SharedPrefsStore
 import com.tvseries.Movies.data.TmdbClient
@@ -19,6 +20,7 @@ class AppContainer(app: Application) {
     val client = TmdbClient(http, { prefs.apiKey.value.ifBlank { BuildConfig.TMDB_API_KEY } })
     val repo = TmdbRepository(client, prefs)
     val wikidata = WikidataClient(http)
+    val session = DiscoverSession(repo, prefs)
     val ads: AdsProvider = AdsModule.provide(BuildConfig.START_IO_APP_ID)
 
     /** One-shot selection handed from Home to the filter screen. */

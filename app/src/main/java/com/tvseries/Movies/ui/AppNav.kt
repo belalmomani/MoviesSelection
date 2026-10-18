@@ -1,6 +1,25 @@
 package com.tvseries.Movies.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
@@ -38,6 +57,13 @@ object Routes {
     const val MOOD = "mood"
     const val PARTY = "party"
     const val COMPARE = "compare"
+    const val CHOOSE = "choose"
+    const val TASTE = "taste"
+    const val MYSTERY = "mystery"
+    const val WORLDS = "worlds"
+    const val ROULETTE = "roulette"
+    const val DOORS = "doors"
+    const val SLIDERS = "sliders"
     const val DETAILS = "details/{type}/{id}"
     const val PERSON = "person/{id}"
     fun details(type: String, id: Int) = "details/$type/$id"
@@ -45,6 +71,48 @@ object Routes {
 }
 
 private class Tab(val route: String, val ar: String, val en: String, val icon: ImageVector)
+
+private class TopItem(val route: String, val ar: String, val en: String)
+
+private val topItems = listOf(
+    TopItem(Routes.CHOOSE, "🤷 اختر لي", "🤷 Choose for me"),
+    TopItem(Routes.TASTE, "👍 ذوقي", "👍 My taste"),
+    TopItem(Routes.MYSTERY, "🎁 الصندوق الغامض", "🎁 Mystery box"),
+    TopItem(Routes.WORLDS, "🗺️ العوالم", "🗺️ Worlds"),
+)
+
+private val moreItems = listOf(
+    TopItem(Routes.ROULETTE, "🎡 الروليت الذكي", "🎡 Smart roulette"),
+    TopItem(Routes.DOORS, "🚪 ثلاثة أبواب", "🚪 Three doors"),
+    TopItem(Routes.SLIDERS, "🎚️ اضبط تفضيلاتي", "🎚️ Tune preferences"),
+)
+
+/** Top bar: four quick-start experiences, plus "More" for the extra pages. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TopActionBar(onGo: (String) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Text("Movies Selection", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 12.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(topItems, key = { it.route }) { t ->
+                    AssistChip(onClick = { onGo(t.route) }, label = { Text(tr(t.ar, t.en)) })
+                }
+                item {
+                    Box {
+                        AssistChip(onClick = { menu = true }, label = { Text(tr("المزيد ▾", "More ▾")) })
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            moreItems.forEach { m ->
+                                DropdownMenuItem(text = { Text(tr(m.ar, m.en)) }, onClick = { menu = false; onGo(m.route) })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 private val tabs = listOf(
     Tab(Routes.HOME, "الرئيسية", "Home", Icons.Default.Home),
@@ -81,6 +149,9 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
     }
 
     Scaffold(
+        topBar = {
+            if (current in tabs.map { it.route }) TopActionBar(onGo = { nav.navigate(it) })
+        },
         bottomBar = {
             if (current in tabs.map { it.route }) {
                 NavigationBar {
@@ -116,6 +187,24 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
             composable(Routes.SETTINGS) { SettingsScreen(container, onAbout = { nav.navigate(Routes.ABOUT) }) }
             composable(Routes.MOOD) {
                 MoodScreen(onBack = { nav.popBackStack() }, onApply = { sel -> nav.popBackStack(); openFilter(sel) })
+            }
+            composable(Routes.CHOOSE) {
+                ChooseScreen(onBack = { nav.popBackStack() }, onDone = { nav.popBackStack(); nav.navigate(Routes.DOORS) })
+            }
+            composable(Routes.TASTE) { TasteScreen(onBack = { nav.popBackStack() }, onOpen = openCard) }
+            composable(Routes.MYSTERY) { MysteryScreen(onBack = { nav.popBackStack() }, onOpen = openCard) }
+            composable(Routes.WORLDS) { WorldsScreen(onBack = { nav.popBackStack() }, onOpen = openCard, onFilter = { sel -> nav.popBackStack(); openFilter(sel) }) }
+            composable(Routes.ROULETTE) {
+                RouletteScreen(onBack = { nav.popBackStack() }, onOpen = openCard, onSliders = { nav.navigate(Routes.SLIDERS) })
+            }
+            composable(Routes.DOORS) {
+                DoorsScreen(
+                    onBack = { nav.popBackStack() }, onOpen = openCard,
+                    onSliders = { nav.navigate(Routes.SLIDERS) }, onChoose = { nav.navigate(Routes.CHOOSE) },
+                )
+            }
+            composable(Routes.SLIDERS) {
+                SlidersScreen(container, onBack = { nav.popBackStack() }, onDoors = { nav.popBackStack(); nav.navigate(Routes.DOORS) })
             }
             composable(Routes.PARTY) { PartyScreen(onBack = { nav.popBackStack() }, onOpen = openCard) }
             composable(Routes.COMPARE) { CompareScreen(container, onBack = { nav.popBackStack() }, onOpen = openCard) }

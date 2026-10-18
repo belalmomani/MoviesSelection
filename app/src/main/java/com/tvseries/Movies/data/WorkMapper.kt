@@ -110,6 +110,7 @@ object WorkMapper {
             if (ids.any { it in NERVES }) moods += "mood.nerves"
             if (ids.any { it in RELAX }) moods += "mood.relax"
             facets[Axes.MOOD] = moods
+            facets[Axes.WORLD] = Worlds.tags(ids, f.keywords?.map { it.second })
             val score = ids.count { it in HIGH_TENSION } - ids.count { it in LOW_TENSION }
             facets[Axes.TENSION] = setOf(
                 when {
