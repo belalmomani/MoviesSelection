@@ -115,6 +115,21 @@ class DataLayerTest {
         assertTrue("world.comedy_light" in t.closure(setOf("world.comedy_light.romcom")))
     }
 
+    @Test fun trailerPickPrefersOfficialYoutubeTrailer() {
+        fun v(key: String, site: String, type: String, name: String, official: Boolean) =
+            com.tvseries.Movies.data.VideoDto(key, site, type, name, official)
+        val list = listOf(
+            v("a", "Vimeo", "Trailer", "x", true),
+            v("b", "YouTube", "Teaser", "x", true),
+            v("c", "YouTube", "Trailer", "x", false),
+            v("d", "YouTube", "Trailer", "x", true),
+        )
+        assertEquals("d", com.tvseries.Movies.data.Trailers.pick(list)!!.key)
+        assertEquals("c", com.tvseries.Movies.data.Trailers.pick(list.filter { it.key != "d" })!!.key)
+        assertEquals("b", com.tvseries.Movies.data.Trailers.pick(list.filter { it.key == "b" || it.key == "a" })!!.key)
+        assertNull(com.tvseries.Movies.data.Trailers.pick(list.filter { it.key == "a" }))
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

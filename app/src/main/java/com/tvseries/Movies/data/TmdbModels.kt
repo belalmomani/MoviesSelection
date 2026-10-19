@@ -173,6 +173,28 @@ data class DetailsDto(
 )
 
 @Serializable
+data class VideoDto(
+    val key: String = "",
+    val site: String = "",
+    val type: String = "",
+    val name: String = "",
+    val official: Boolean? = null,
+)
+
+@Serializable
+data class VideosDto(val results: List<VideoDto> = emptyList())
+
+/** Picks the best YouTube clip: official trailer, then trailer, then teaser. Null when none exists. */
+object Trailers {
+    fun pick(videos: List<VideoDto>): VideoDto? {
+        val yt = videos.filter { it.site.equals("YouTube", ignoreCase = true) && it.key.isNotBlank() }
+        return yt.firstOrNull { it.type == "Trailer" && it.official == true }
+            ?: yt.firstOrNull { it.type == "Trailer" }
+            ?: yt.firstOrNull { it.type == "Teaser" }
+    }
+}
+
+@Serializable
 data class PersonDto(
     val id: Int = 0,
     val name: String = "",

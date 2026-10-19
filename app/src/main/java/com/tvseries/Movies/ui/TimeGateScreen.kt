@@ -4,7 +4,21 @@ package com.tvseries.Movies.ui
 
 import android.app.Application
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import android.annotation.SuppressLint
+import android.graphics.Color as AndroidColor
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -83,6 +97,14 @@ class TimeGateState(val clock: JourneyClock) {
     var warp by mutableFloatStateOf(0f)
     var timeMs by mutableLongStateOf(0L)
     val stations = mutableStateMapOf<Int, Load<List<WorkCard>>>()
+
+    /** 1x = each front screen stays about 10 seconds (one short trailer clip). */
+    var speed by mutableFloatStateOf(1f)
+    var sound by mutableStateOf(false)
+    var activeKey by mutableStateOf<String?>(null)
+
+    /** card key -> YouTube video key; "" = no trailer; "?" = still looking. */
+    val trailers = mutableStateMapOf<String, String>()
 }
 
 class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
@@ -119,6 +141,28 @@ class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
                 Load.Fail(e)
             }
         }
+    }
+
+    fun ensureTrailer(card: WorkCard) {
+        if (state.trailers.containsKey(card.key)) return
+        state.trailers[card.key] = "?"
+        viewModelScope.launch {
+            val k = try {
+                com.tvseries.Movies.data.Trailers.pick(c.repo.videos(card.mediaType, card.id))?.key
+            } catch (e: TmdbError) {
+                null
+            }
+            state.trailers[card.key] = k.orEmpty()
+        }
+    }
+
+    fun trailerFailed(cardKey: String) {
+        state.trailers[cardKey] = ""
+    }
+
+    fun setSpeed(v: Float) {
+        state.speed = v
+        state.clock.speed = v
     }
 
     fun setManual(on: Boolean) {
@@ -161,7 +205,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                 vm.ensure(st.index)
             }
             if (!st.manual) {
-                st.yaw = (st.yaw + 7f * dt / 1000f) % 360f
+                st.yaw = (st.yaw + 4.5f * st.speed * dt / 1000f) % 360f
                 st.pitch = 0.35f * sin(st.timeMs / 4200f)
             }
         }
@@ -175,6 +219,20 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
     val list = (data as? Load.Ok)?.value.orEmpty()
     val slots = remember(list.size) { layoutSlots(list.size) }
     val bucket by remember { derivedStateOf { (st.yaw / 6f).toInt() } }
+    // The middle-ring screen facing the viewer is the one that plays its short trailer.
+    val frontKey by remember(slots, list) {
+        derivedStateOf {
+            slots.filter { it.row == 0 }.minByOrNull { abs(wrapDegrees(it.angle - st.yaw)) }?.let { list.getOrNull(it.index)?.key }
+        }
+    }
+    LaunchedEffect(frontKey) {
+        val k = frontKey
+        if (k != null) {
+            delay(if (st.activeKey == null) 400L else 1200L)
+            st.activeKey = k
+            list.firstOrNull { it.key == k }?.let { vm.ensureTrailer(it) }
+        }
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val density = LocalDensity.current
@@ -227,8 +285,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
             ordered.forEach { slot ->
                 val card = list.getOrNull(slot.index)
                 if (card != null) key(card.key) {
-                    PosterImage(
-                        Img.poster(card.posterPath), card.title,
+                    Box(
                         Modifier.align(Alignment.Center).size(screenW, screenH)
                             .graphicsLayer {
                                 val d = wrapDegrees(slot.angle - st.yaw)
@@ -249,7 +306,14 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                             .clip(shape)
                             .border(2.dp, Color.White.copy(alpha = 0.35f), shape)
                             .clickable { onOpen(card) },
-                    )
+                    ) {
+                        val vk = st.trailers[card.key]
+                        ScreenFace(
+                            card = card, active = st.activeKey == card.key,
+                            videoKey = vk, sound = st.sound, seed = slot.index,
+                            onFail = { vm.trailerFailed(card.key) },
+                        )
+                    }
                 }
             }
         }
@@ -283,6 +347,8 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                             s == null || s is Load.Loading -> tr("جاري تحميل أعمال هذه المحطة...", "Loading this station's titles...")
                             s is Load.Fail -> errorText(s.error)
                             list.isEmpty() -> tr("لا أعمال لهذه المحطة في TMDB.", "No titles for this station on TMDB.")
+                            st.activeKey != null && st.trailers[st.activeKey!!] == "" ->
+                                tr("لا يوجد مقطع إعلاني لهذا العمل؛ تبقى الشاشة بحركة الملصق.", "No trailer for this title; the screen keeps the poster motion.")
                             else -> if (st.manual) tr("اسحب لتدوير الرؤية 360° والنظر للأعلى والأسفل. اضغط أي شاشة لفتح العمل.", "Drag to look around 360° and up/down. Tap a screen to open it.")
                             else tr("الرحلة تلقائية. اضغط أي شاشة لفتح العمل.", "Automatic journey. Tap any screen to open it.")
                         },
@@ -291,6 +357,19 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                 }
                 Text(tr("التحكم اليدوي", "Manual control"), color = Color.White, style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
                 Switch(checked = st.manual, onCheckedChange = { vm.setManual(it) }, modifier = Modifier.padding(start = 6.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(tr("السرعة", "Speed"), color = Color.White, style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
+                listOf(0.5f, 1f, 1.5f, 2f, 3f).forEach { sp ->
+                    AssistChip(
+                        onClick = { vm.setSpeed(sp) },
+                        label = { Text("×" + (if (sp % 1f == 0f) sp.toInt().toString() else sp.toString()), color = if (st.speed == sp) Color.Black else Color.White) },
+                        colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(
+                            containerColor = if (st.speed == sp) Color.White else Color.White.copy(alpha = 0.12f),
+                        ),
+                    )
+                }
+                TextButton(onClick = { st.sound = !st.sound }) { Text(if (st.sound) "🔊" else "🔇", color = Color.White) }
             }
             if (data is Load.Fail) OutlinedButton(onClick = { vm.retry(st.index) }) { Text(tr("إعادة المحاولة", "Retry"), color = Color.White) }
 
@@ -318,4 +397,105 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
             }
         }
     }
+}
+
+private const val CLIP_START = 6
+private const val CLIP_SECONDS = 10
+
+/** One cinema screen: moving poster everywhere; the front screen plays a ~10 second trailer clip. */
+@Composable
+private fun ScreenFace(card: WorkCard, active: Boolean, videoKey: String?, sound: Boolean, seed: Int, onFail: () -> Unit) {
+    val inf = rememberInfiniteTransition(label = "face")
+    val zoom = inf.animateFloat(
+        1.02f, 1.14f, infiniteRepeatable(tween(6500 + (seed % 5) * 700, easing = LinearEasing), RepeatMode.Reverse), label = "zoom",
+    )
+    val sweep = inf.animateFloat(
+        -1f, 2f, infiniteRepeatable(tween(3800 + (seed % 4) * 500, easing = LinearEasing), RepeatMode.Restart), label = "sweep",
+    )
+    Box(Modifier.fillMaxSize()) {
+        PosterImage(
+            Img.poster(card.posterPath), card.title,
+            Modifier.fillMaxSize().graphicsLayer {
+                scaleX = zoom.value
+                scaleY = zoom.value
+                translationX = (zoom.value - 1.08f) * 90f
+            },
+        )
+        if (active && !videoKey.isNullOrEmpty() && videoKey != "?") {
+            TrailerPlayer(videoKey, sound, onFail, Modifier.fillMaxSize())
+        }
+        Canvas(Modifier.fillMaxSize()) {
+            val x = size.width * sweep.value
+            drawRect(
+                Brush.linearGradient(
+                    listOf(Color.Transparent, Color.White.copy(alpha = 0.16f), Color.Transparent),
+                    Offset(x - size.width * 0.3f, 0f), Offset(x + size.width * 0.3f, size.height),
+                ),
+            )
+        }
+        if (active) Text("🎬", Modifier.align(Alignment.TopEnd).padding(4.dp))
+    }
+}
+
+private class TrailerBridge(private val onFail: () -> Unit) {
+    private val main = Handler(Looper.getMainLooper())
+
+    @JavascriptInterface
+    fun error(code: Int) {
+        main.post { onFail() }
+    }
+}
+
+private fun trailerHtml(key: String): String = """
+    <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{pointer-events:none}</style></head>
+    <body><div id="p"></div>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+    var player;
+    function onYouTubeIframeAPIReady(){
+      player = new YT.Player('p',{width:'100%',height:'100%',videoId:'__KEY__',
+        playerVars:{autoplay:1,mute:1,controls:0,playsinline:1,rel:0,modestbranding:1,disablekb:1,fs:0,iv_load_policy:3,start:__START__},
+        events:{
+          onReady:function(e){e.target.mute();e.target.playVideo();},
+          onStateChange:function(e){
+            if(e.data===1){clearTimeout(window.clipTimer);
+              window.clipTimer=setTimeout(function(){player.seekTo(__START__,true);},__CLIP__*1000);}
+          },
+          onError:function(e){Android.error(e.data);}
+        }});
+    }
+    </script></body></html>
+""".trimIndent().replace("__KEY__", key).replace("__START__", CLIP_START.toString()).replace("__CLIP__", CLIP_SECONDS.toString())
+
+/** Official YouTube IFrame player (muted autoplay, no controls); loops a ~10 second excerpt. */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun TrailerPlayer(videoKey: String, sound: Boolean, onFail: () -> Unit, modifier: Modifier) {
+    val ctx = LocalContext.current
+    val web = remember(videoKey) {
+        WebView(ctx).apply {
+            setBackgroundColor(AndroidColor.BLACK)
+            settings.javaScriptEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.domStorageEnabled = true
+            isClickable = false
+            isFocusable = false
+            webViewClient = WebViewClient()
+            addJavascriptInterface(TrailerBridge(onFail), "Android")
+            loadDataWithBaseURL("https://www.youtube.com", trailerHtml(videoKey), "text/html", "utf-8", null)
+        }
+    }
+    DisposableEffect(web) {
+        onDispose {
+            web.stopLoading()
+            (web.parent as? android.view.ViewGroup)?.removeView(web)
+            web.destroy()
+        }
+    }
+    LaunchedEffect(sound, web) {
+        delay(1500)
+        web.evaluateJavascript(if (sound) "try{player.unMute();player.setVolume(100);}catch(e){}" else "try{player.mute();}catch(e){}", null)
+    }
+    AndroidView(factory = { web }, modifier = modifier)
 }

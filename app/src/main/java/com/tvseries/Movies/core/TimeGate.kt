@@ -69,7 +69,7 @@ fun layoutSlots(count: Int): List<Slot> {
  */
 class JourneyClock(
     val stationCount: Int,
-    private val dwellMs: Long = 9000,
+    private val dwellMs: Long = 60000,
     private val warpMs: Long = 1600,
     start: Int = 0,
 ) {
@@ -78,6 +78,9 @@ class JourneyClock(
     var dwellLeft: Long = dwellMs
         private set
     var advancing: Boolean = true
+
+    /** Journey tempo: scales how fast the dwell time runs out (rotation speed is handled by the screen). */
+    var speed: Float = 1f
 
     private var warpLeft = 0L
     private var pending = start
@@ -113,7 +116,7 @@ class JourneyClock(
                 dwellLeft = dwellMs
             }
         } else if (advancing) {
-            dwellLeft -= dtMs
+            dwellLeft -= (dtMs * speed).toLong()
             if (dwellLeft <= 0) jumpTo(index + 1)
         }
         return changed

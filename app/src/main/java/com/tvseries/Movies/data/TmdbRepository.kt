@@ -47,6 +47,10 @@ class TmdbRepository(private val client: TmdbClient, private val prefs: Prefs) {
         return d
     }
 
+    /** Trailers are listed in English: far more titles have one than in Arabic. */
+    suspend fun videos(media: String, id: Int): List<VideoDto> =
+        client.get("$media/$id/videos", mapOf("language" to "en-US"), VideosDto.serializer()).results
+
     suspend fun season(tvId: Int, season: Int): SeasonDetailDto =
         client.get("tv/$tvId/season/$season", mapOf("language" to uiLang), SeasonDetailDto.serializer())
 
