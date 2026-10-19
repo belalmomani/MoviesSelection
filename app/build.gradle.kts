@@ -23,8 +23,8 @@ android {
         applicationId = "com.tvseries.Movies"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.5.0"
+        versionCode = 7
+        versionName = "1.5.2"
 
         // The TMDB key is NEVER stored in the repository. It is read from a Gradle property
         // or the TMDB_API_KEY environment variable (GitHub Actions secret). Empty = the user
@@ -37,7 +37,20 @@ android {
         // Ads are prepared but disabled. No ad SDK is included in this build.
         buildConfigField("boolean", "ADS_ENABLED", adsEnabled.toString())
         manifestPlaceholders["startIoAppId"] = startIoAppId
+        buildConfigField("String", "PRIVACY_URL", "\"${(appConfig.getProperty("PRIVACY_URL") ?: "").trim()}\"")
         buildConfigField("String", "START_IO_APP_ID", "\"${(appConfig.getProperty("START_IO_APP_ID") ?: "").trim()}\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            val path = System.getenv("KEYSTORE_PATH")
+            if (!path.isNullOrBlank() && file(path).exists()) {
+                storeFile = file(path)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -45,8 +58,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Installable test build (debug-signed). Replace with a real signing config for Play Store.
-            signingConfig = signingConfigs.getByName("debug")
+            // Real key only when the CI provides one (KEYSTORE_PATH...); otherwise an installable debug-signed test build.
+            val release = signingConfigs.getByName("release")
+            signingConfig = if (release.storeFile != null) release else signingConfigs.getByName("debug")
         }
     }
 

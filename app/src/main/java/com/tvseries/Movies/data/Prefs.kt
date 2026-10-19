@@ -129,6 +129,22 @@ class Prefs(private val store: KeyValueStore) {
 
     fun setHideWatched(v: Boolean) { _hideWatched.value = v; store.putString(K_HIDE_WATCHED, v.toString()) }
 
+    /** Erases everything the user created (lists, taste, filters, history). Language / theme / key stay. */
+    fun clearUserData() {
+        _favorites.value = emptyList()
+        store.putString(K_FAV, "[]")
+        _watchlist.value = emptyList()
+        store.putString(K_WATCH, "[]")
+        _watched.value = emptySet()
+        store.putString(K_WATCHED, "[]")
+        _saved.value = emptyList()
+        store.putString(K_SAVED, "[]")
+        setTaste(TasteProfile())
+        setIntent(UserIntent())
+        clearHistory()
+        saveSelection(Selection())
+    }
+
     fun setLanguage(v: String) { _language.value = v; store.putString(K_LANG, v) }
     fun setTheme(v: String) { _theme.value = v; store.putString(K_THEME, v) }
     fun setShowAdult(v: Boolean) { _showAdult.value = v; store.putString(K_ADULT, v.toString()) }

@@ -106,6 +106,9 @@ class TimeGateState(val clock: JourneyClock) {
 
     /** card key -> YouTube video key; "" = no trailer; "?" = still looking. */
     val trailers = mutableStateMapOf<String, String>()
+
+    /** card key -> why its trailer could not play (YouTube error code, or -1 = never started). */
+    val trailerCodes = mutableStateMapOf<String, Int>()
 }
 
 class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
@@ -157,8 +160,9 @@ class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun trailerFailed(cardKey: String) {
+    fun trailerFailed(cardKey: String, code: Int) {
         state.trailers[cardKey] = ""
+        state.trailerCodes[cardKey] = code
     }
 
     fun setSpeed(v: Float) {
@@ -312,7 +316,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                         ScreenFace(
                             card = card, active = st.activeKey == card.key,
                             videoKey = vk, sound = st.sound, seed = slot.index,
-                            onFail = { vm.trailerFailed(card.key) },
+                            onFail = { code -> vm.trailerFailed(card.key, code) },
                         )
                     }
                 }
@@ -348,6 +352,8 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                             s == null || s is Load.Loading -> tr("جاري تحميل أعمال هذه المحطة...", "Loading this station's titles...")
                             s is Load.Fail -> errorText(s.error)
                             list.isEmpty() -> tr("لا أعمال لهذه المحطة في TMDB.", "No titles for this station on TMDB.")
+                            st.activeKey != null && st.trailerCodes.containsKey(st.activeKey!!) ->
+                                trailerMessage(st.trailerCodes[st.activeKey!!] ?: 0)
                             st.activeKey != null && st.trailers[st.activeKey!!] == "" ->
                                 tr("لا يوجد مقطع إعلاني لهذا العمل؛ تبقى الشاشة بحركة الملصق.", "No trailer for this title; the screen keeps the poster motion.")
                             else -> if (st.manual) tr("اسحب لتدوير الرؤية 360° والنظر للأعلى والأسفل. اضغط أي شاشة لفتح العمل.", "Drag to look around 360° and up/down. Tap a screen to open it.")
@@ -405,7 +411,7 @@ private const val CLIP_SECONDS = 10
 
 /** One cinema screen: moving poster everywhere; the front screen plays a ~10 second trailer clip. */
 @Composable
-private fun ScreenFace(card: WorkCard, active: Boolean, videoKey: String?, sound: Boolean, seed: Int, onFail: () -> Unit) {
+private fun ScreenFace(card: WorkCard, active: Boolean, videoKey: String?, sound: Boolean, seed: Int, onFail: (Int) -> Unit) {
     val inf = rememberInfiniteTransition(label = "face")
     val zoom = inf.animateFloat(
         1.02f, 1.14f, infiniteRepeatable(tween(6500 + (seed % 5) * 700, easing = LinearEasing), RepeatMode.Reverse), label = "zoom",
@@ -438,13 +444,26 @@ private fun ScreenFace(card: WorkCard, active: Boolean, videoKey: String?, sound
     }
 }
 
-private class TrailerBridge(private val onFail: () -> Unit) {
+private class TrailerBridge(private val onFail: (Int) -> Unit, private val onStarted: () -> Unit) {
     private val main = Handler(Looper.getMainLooper())
 
     @JavascriptInterface
     fun error(code: Int) {
-        main.post { onFail() }
+        main.post { onFail(code) }
     }
+
+    @JavascriptInterface
+    fun playing() {
+        main.post { onStarted() }
+    }
+}
+
+@Composable
+private fun trailerMessage(code: Int): String = when (code) {
+    101, 150, 153 -> tr("صاحب هذا الإعلان يمنع تشغيله داخل التطبيقات؛ تبقى حركة الملصق.", "The owner blocks playing this trailer inside apps; showing the animated poster.")
+    100 -> tr("الإعلان لم يعد موجودًا على YouTube.", "The trailer no longer exists on YouTube.")
+    -1 -> tr("لم يبدأ تشغيل المقطع (تحقق من الإنترنت، أو أن WebView محدَّث).", "The clip never started (check internet, or update Android System WebView).")
+    else -> tr("تعذّر تشغيل المقطع (رمز $code).", "The clip could not play (code $code).")
 }
 
 private fun trailerHtml(key: String): String = """
@@ -460,7 +479,7 @@ private fun trailerHtml(key: String): String = """
         events:{
           onReady:function(e){e.target.mute();e.target.playVideo();},
           onStateChange:function(e){
-            if(e.data===1){clearTimeout(window.clipTimer);
+            if(e.data===1){Android.playing();clearTimeout(window.clipTimer);
               window.clipTimer=setTimeout(function(){player.seekTo(__START__,true);},__CLIP__*1000);}
           },
           onError:function(e){Android.error(e.data);}
@@ -472,8 +491,9 @@ private fun trailerHtml(key: String): String = """
 /** Official YouTube IFrame player (muted autoplay, no controls); loops a ~10 second excerpt. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun TrailerPlayer(videoKey: String, sound: Boolean, onFail: () -> Unit, modifier: Modifier) {
+private fun TrailerPlayer(videoKey: String, sound: Boolean, onFail: (Int) -> Unit, modifier: Modifier) {
     val ctx = LocalContext.current
+    var started by remember(videoKey) { mutableStateOf(false) }
     val web = remember(videoKey) {
         WebView(ctx).apply {
             setBackgroundColor(AndroidColor.BLACK)
@@ -483,7 +503,7 @@ private fun TrailerPlayer(videoKey: String, sound: Boolean, onFail: () -> Unit, 
             isClickable = false
             isFocusable = false
             webViewClient = WebViewClient()
-            addJavascriptInterface(TrailerBridge(onFail), "Android")
+            addJavascriptInterface(TrailerBridge(onFail) { started = true }, "Android")
             loadDataWithBaseURL("https://www.youtube.com", trailerHtml(videoKey), "text/html", "utf-8", null)
         }
     }
@@ -493,6 +513,11 @@ private fun TrailerPlayer(videoKey: String, sound: Boolean, onFail: () -> Unit, 
             (web.parent as? android.view.ViewGroup)?.removeView(web)
             web.destroy()
         }
+    }
+    // If nothing plays within 10 seconds, say so instead of leaving a mysterious black screen.
+    LaunchedEffect(web) {
+        delay(10000)
+        if (!started) onFail(-1)
     }
     LaunchedEffect(sound, web) {
         delay(1500)

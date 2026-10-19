@@ -130,6 +130,22 @@ class DataLayerTest {
         assertNull(com.tvseries.Movies.data.Trailers.pick(list.filter { it.key == "a" }))
     }
 
+    @Test fun clearUserDataErasesEverythingTheUserCreated() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        p.setLanguage("en")
+        p.toggleFavorite(WorkCard("movie", 1, "A"))
+        p.toggleWatchlist(WorkCard("tv", 2, "B"))
+        p.toggleWatched("movie:1")
+        p.saveFilter("x", Selection().toggleInclude(Axes.GENRE, "genre.35"))
+        p.setTaste(com.tvseries.Movies.core.TasteProfile().update(listOf(35), "movie:1", true, emptySet()))
+        p.clearUserData()
+        val again = Prefs(store)
+        assertTrue(again.favorites.value.isEmpty() && again.watchlist.value.isEmpty() && again.watched.value.isEmpty())
+        assertTrue(again.savedFilters.value.isEmpty() && again.taste.value.accepted.isEmpty())
+        assertEquals("en", again.language.value) // settings are kept
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

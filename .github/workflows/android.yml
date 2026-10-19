@@ -44,11 +44,35 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Build release APK (optional)
+      - name: Decode release keystore (if provided)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_release }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            echo "Release keystore decoded."
+          else
+            echo "No KEYSTORE_BASE64 secret: release will be debug-signed (test only)."
+          fi
+
+      - name: Build release APK + AAB (optional)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_release }}
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-        run: gradle --no-daemon --stacktrace :app:assembleRelease
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle --no-daemon --stacktrace :app:assembleRelease :app:bundleRelease
+
+      - name: Upload release AAB
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoviesSelection-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

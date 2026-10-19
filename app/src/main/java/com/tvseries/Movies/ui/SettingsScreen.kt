@@ -155,6 +155,23 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         HorizontalDivider()
+        var confirmClear by remember { mutableStateOf(false) }
+        OutlinedButton(onClick = { confirmClear = true }) { Text(tr("مسح بياناتي المحلية", "Erase my local data")) }
+        Text(
+            tr("يحذف المفضلة وشاهد لاحقًا وعلامات المشاهدة والتصفيات المحفوظة والذوق المتعلَّم وسجل البحث من هذا الجهاز.", "Deletes favorites, watch list, watched marks, saved filters, learned taste and search history from this device."),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (confirmClear) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { confirmClear = false },
+                title = { Text(tr("مسح كل بياناتك المحلية؟", "Erase all your local data?")) },
+                text = { Text(tr("لا يمكن التراجع عن هذا.", "This cannot be undone.")) },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = { p.clearUserData(); confirmClear = false }) { Text(tr("مسح", "Erase")) }
+                },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmClear = false }) { Text(tr("إلغاء", "Cancel")) } },
+            )
+        }
         OutlinedButton(onClick = onAbout) { Text(tr("حول التطبيق والمصادر", "About & sources")) }
         Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall)
     }
@@ -191,8 +208,12 @@ fun AboutScreen(onBack: () -> Unit) {
             ),
         )
         Text(
-            tr("الإعلانات: غير مفعّلة في هذا الإصدار.", "Ads: not enabled in this version."),
+            tr("الإعلانات: بانر في الرئيسية وصفحة العمل فقط، ولا يظهر أثناء التصفية أو الاختيار.", "Ads: a banner on Home and Details only; never while filtering or choosing."),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (BuildConfig.PRIVACY_URL.isNotBlank()) {
+            val uri = androidx.compose.ui.platform.LocalUriHandler.current
+            OutlinedButton(onClick = { uri.openUri(BuildConfig.PRIVACY_URL) }) { Text(tr("سياسة الخصوصية", "Privacy policy")) }
+        }
     }
 }
