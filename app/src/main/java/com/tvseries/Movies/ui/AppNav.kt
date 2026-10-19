@@ -58,6 +58,7 @@ object Routes {
     const val PARTY = "party"
     const val COMPARE = "compare"
     const val CHOOSE = "choose"
+    const val TIMEGATE = "timegate"
     const val TASTE = "taste"
     const val MYSTERY = "mystery"
     const val WORLDS = "worlds"
@@ -171,7 +172,7 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
             composable(Routes.HOME) {
                 HomeScreen(
                     ads = container.ads, onOpen = openCard, onSearch = { nav.goTab(Routes.SEARCH) },
-                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onParty = { nav.navigate(Routes.PARTY) },
+                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onParty = { nav.navigate(Routes.PARTY) }, onTimeGate = { nav.navigate(Routes.TIMEGATE) },
                 )
             }
             composable(Routes.FILTER) {
@@ -188,6 +189,7 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
             composable(Routes.MOOD) {
                 MoodScreen(onBack = { nav.popBackStack() }, onApply = { sel -> nav.popBackStack(); openFilter(sel) })
             }
+            composable(Routes.TIMEGATE) { TimeGateScreen(onExit = { nav.popBackStack() }, onOpen = openCard) }
             composable(Routes.CHOOSE) {
                 ChooseScreen(onBack = { nav.popBackStack() }, onDone = { nav.popBackStack(); nav.navigate(Routes.DOORS) })
             }

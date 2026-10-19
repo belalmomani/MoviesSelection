@@ -141,6 +141,7 @@ fun HomeScreen(
     ads: AdsProvider,
     onMood: () -> Unit,
     onParty: () -> Unit,
+    onTimeGate: () -> Unit,
     onOpen: (WorkCard) -> Unit,
     onSearch: () -> Unit,
     onFilter: (Selection?) -> Unit,
@@ -184,6 +185,9 @@ fun HomeScreen(
                     Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(tr("ابحث عن فيلم أو مسلسل أو شخص", "Search a movie, series or person"))
+                }
+                androidx.compose.material3.FilledTonalButton(onClick = onTimeGate, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("🌀 بوابة الزمن السينمائية", "🌀 Cinema Time Gate"))
                 }
                 OutlinedButton(onClick = onParty, modifier = Modifier.fillMaxWidth()) {
                     Text(tr("🎉 سهرة جماعية", "🎉 Group watch"))

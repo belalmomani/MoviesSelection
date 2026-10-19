@@ -232,4 +232,39 @@ class FilterEngineTest {
         assertTrue(taste.score(listOf(35), null) > 0.5)
         assertEquals(setOf("movie:1", "movie:2"), taste.seen())
     }
+
+    @Test fun journeyAutoAdvancesAndManualModeKeepsThePlace() {
+        val c = com.tvseries.Movies.core.JourneyClock(5, dwellMs = 1000, warpMs = 400)
+        repeat(100) { c.tick(10) }
+        assertEquals(0, c.index)             // warp has only just started
+        repeat(25) { c.tick(10) }
+        assertEquals(1, c.index)             // station switches at the middle of the warp
+        repeat(20) { c.tick(10) }
+        assertFalse(c.warping)
+        c.advancing = false                  // manual control: freeze here
+        val left = c.dwellLeft
+        repeat(500) { c.tick(10) }
+        assertEquals(1, c.index)
+        assertEquals(left, c.dwellLeft)
+        c.advancing = true                   // back to automatic: continues, does not restart
+        c.tick(10)
+        assertEquals(left - 10, c.dwellLeft)
+        assertEquals(1, c.index)
+        c.jumpTo(-1)                         // manual jump to the past wraps around
+        repeat(100) { c.tick(10) }
+        assertEquals(4, c.index)
+    }
+
+    @Test fun screensRingCoversEveryTitleOnceAndUsesAllRows() {
+        for (n in listOf(0, 1, 7, 8, 13, 18)) {
+            val s = com.tvseries.Movies.core.layoutSlots(n)
+            assertEquals(n, s.size)
+            assertEquals((0 until n).toSet(), s.map { it.index }.toSet())
+        }
+        val rows = com.tvseries.Movies.core.layoutSlots(18).map { it.row }.toSet()
+        assertEquals(setOf(-1, 0, 1), rows) // above, around and below the viewer
+        assertEquals(-170f, com.tvseries.Movies.core.wrapDegrees(190f), 1e-4f)
+        assertEquals(170f, com.tvseries.Movies.core.wrapDegrees(-190f), 1e-4f)
+        assertEquals(11, com.tvseries.Movies.core.Eras.starts.size)
+    }
 }
