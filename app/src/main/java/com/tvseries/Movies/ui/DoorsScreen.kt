@@ -173,7 +173,8 @@ fun DoorsScreen(onBack: () -> Unit, onOpen: (WorkCard) -> Unit, onSliders: () ->
                 is Load.Fail -> ErrorBox(s.error, onRetry = { vm.load() })
                 is Load.Ok -> {
                     val r = s.value
-                    IntentSummary(intent) { axis, v -> r.taxonomy.node(v)?.name(isArabic()) ?: v }
+                    val arabicNames = isArabic()
+                    IntentSummary(intent) { _, v -> r.taxonomy.node(v)?.name(arabicNames) ?: v }
                     val d = doors
                     if (d == null || d.closest == null) {
                         Text(
@@ -287,7 +288,8 @@ fun RouletteScreen(onBack: () -> Unit, onOpen: (WorkCard) -> Unit, onSliders: ()
                 is Load.Fail -> ErrorBox(s.error, onRetry = { vm.load() })
                 is Load.Ok -> {
                     val r = s.value
-                    IntentSummary(intent) { _, v -> r.taxonomy.node(v)?.name(isArabic()) ?: v }
+                    val arabicNames = isArabic()
+                    IntentSummary(intent) { _, v -> r.taxonomy.node(v)?.name(arabicNames) ?: v }
                     Text(
                         tr(
                             "في القرعة ${r.ranked.size} عملًا اجتازوا كل شروطك الإلزامية؛ الأعمال المخالفة لا تدخلها أبدًا. الأنسب لتفضيلاتك أكثر حظًا، ونحو 10% مفاجآت من داخل المؤهَّلين فقط.",
