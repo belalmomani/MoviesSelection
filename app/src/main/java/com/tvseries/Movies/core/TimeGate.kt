@@ -69,7 +69,7 @@ fun layoutSlots(count: Int): List<Slot> {
  */
 class JourneyClock(
     val stationCount: Int,
-    private val dwellMs: Long = 60000,
+    private val dwellMs: Long = 40000,
     private val warpMs: Long = 1600,
     start: Int = 0,
 ) {

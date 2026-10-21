@@ -23,8 +23,11 @@ android {
         applicationId = "com.tvseries.Movies"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.5.2"
+        // Every CI build gets a higher versionCode (run number) so it installs OVER the previous one.
+        val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = 100 + buildNumber
+        versionName = "1.6.0.$buildNumber"
+        buildConfigField("int", "BUILD_NUMBER", buildNumber.toString())
 
         // The TMDB key is NEVER stored in the repository. It is read from a Gradle property
         // or the TMDB_API_KEY environment variable (GitHub Actions secret). Empty = the user
@@ -37,11 +40,23 @@ android {
         // Ads are prepared but disabled. No ad SDK is included in this build.
         buildConfigField("boolean", "ADS_ENABLED", adsEnabled.toString())
         manifestPlaceholders["startIoAppId"] = startIoAppId
+        buildConfigField("String", "UPDATE_REPO", "\"${(appConfig.getProperty("UPDATE_REPO") ?: "").trim()}\"")
         buildConfigField("String", "PRIVACY_URL", "\"${(appConfig.getProperty("PRIVACY_URL") ?: "").trim()}\"")
         buildConfigField("String", "START_IO_APP_ID", "\"${(appConfig.getProperty("START_IO_APP_ID") ?: "").trim()}\"")
     }
 
     signingConfigs {
+        // One fixed key for all test builds. Android only updates an installed app when the signature matches;
+        // CI debug keys are random per run, which is why every update used to need an uninstall.
+        getByName("debug") {
+            val fixed = file("signing/movies-test.keystore")
+            if (fixed.exists()) {
+                storeFile = fixed
+                storePassword = "moviestest123"
+                keyAlias = "moviestest"
+                keyPassword = "moviestest123"
+            }
+        }
         create("release") {
             val path = System.getenv("KEYSTORE_PATH")
             if (!path.isNullOrBlank() && file(path).exists()) {

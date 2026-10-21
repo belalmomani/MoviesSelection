@@ -11,7 +11,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-${{ github.ref }}
@@ -80,6 +80,17 @@ jobs:
           name: MoviesSelection-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+
+      - name: Publish release (for in-app updates)
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk MoviesSelection.apk
+          gh release create "build-${{ github.run_number }}" MoviesSelection.apk \
+            --title "Build ${{ github.run_number }}" \
+            --notes "Test build ${{ github.run_number }} (versionCode $((100 + ${{ github.run_number }})))" \
+            --latest
 
       - name: Upload test reports
         if: always()

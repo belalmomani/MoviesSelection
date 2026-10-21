@@ -75,7 +75,12 @@ internal fun questionTitle(axis: String, fallback: String): String = when (axis)
 }
 
 @Composable
-fun FilterScreen(onOpen: (WorkCard) -> Unit, onCompare: (List<WorkCard>) -> Unit, vm: FilterViewModel = viewModel()) {
+fun FilterScreen(
+    onOpen: (WorkCard) -> Unit,
+    onCompare: (List<WorkCard>) -> Unit,
+    onFinalStage: (List<WorkCard>) -> Unit,
+    vm: FilterViewModel = viewModel(),
+) {
     val ui by vm.ui.collectAsState()
     val state by vm.state.collectAsState()
     val loading by vm.loading.collectAsState()
@@ -228,6 +233,14 @@ fun FilterScreen(onOpen: (WorkCard) -> Unit, onCompare: (List<WorkCard>) -> Unit
             val showList = outcome !is Outcome.Single && outcome !is Outcome.NoResults && outcome !is Outcome.PoolEmpty
             if (showList) {
                 item { SectionTitle(tr("النتائج الحالية: ${u.result.matched.size}", "Current results: ${u.result.matched.size}")) }
+                if (u.result.matched.size in 2..12) {
+                    item {
+                        Button(
+                            onClick = { onFinalStage(u.result.matched.mapNotNull { u.snapshot.cards[it.key] }) },
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                        ) { Text(tr("➡️ المرحلة الثانية: الفلترة النهائية (${u.result.matched.size})", "➡️ Stage 2: final filtering (${u.result.matched.size})")) }
+                    }
+                }
                 if (u.result.matched.size in 2..3) {
                     item {
                         OutlinedButton(

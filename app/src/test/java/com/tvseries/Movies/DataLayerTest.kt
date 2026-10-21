@@ -146,6 +146,41 @@ class DataLayerTest {
         assertEquals("en", again.language.value) // settings are kept
     }
 
+    @Test fun finalStageNarrowsAndAdvances() {
+        val f = com.tvseries.Movies.core.FinalStage
+        val st = com.tvseries.Movies.core.Stage
+        val keys = listOf("a", "b", "c", "d", "e", "f")
+        assertEquals(keys, f.narrow(keys, emptySet()))
+        assertEquals(listOf("b", "d"), f.narrow(keys, setOf("b", "d")))
+        assertEquals(st.HEROES, f.next(10, null))
+        assertEquals(st.GENRES, f.next(5, st.HEROES))
+        assertEquals(st.STORY, f.next(4, st.GENRES))
+        assertEquals(st.DUEL, f.next(2, st.STORY))
+        assertEquals(st.WINNER, f.next(1, st.STORY))
+        assertEquals(st.DUEL, f.next(2, null))
+    }
+
+    @Test fun updateCheckFindsNewerBuildAndReportsMissingRelease() = runBlocking {
+        val s = MockWebServer()
+        s.enqueue(MockResponse().setBody("""{"tag_name":"build-12","assets":[{"name":"MoviesSelection.apk","url":"https://api/x","browser_download_url":"https://dl/x.apk"}]}"""))
+        s.start()
+        val uc = com.tvseries.Movies.data.UpdateClient(OkHttpClient(), "o/r", { "" }, s.url("/").toString())
+        val info = uc.latest()!!
+        val u = com.tvseries.Movies.data.Updates
+        assertEquals(12, info.build)
+        assertTrue(u.isNewer(info.build, 11))
+        assertFalse(u.isNewer(info.build, 12))
+        assertTrue(s.takeRequest().path!!.endsWith("/repos/o/r/releases/latest"))
+        s.enqueue(MockResponse().setResponseCode(404))
+        try {
+            uc.latest()
+            error("expected failure")
+        } catch (e: com.tvseries.Movies.data.UpdateException) {
+            assertEquals(com.tvseries.Movies.data.UpdateException.Kind.NOT_FOUND, e.kind)
+        }
+        s.shutdown()
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

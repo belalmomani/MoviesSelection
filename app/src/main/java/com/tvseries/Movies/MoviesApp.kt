@@ -11,6 +11,7 @@ import com.tvseries.Movies.data.DiscoverSession
 import com.tvseries.Movies.data.Prefs
 import com.tvseries.Movies.data.SharedPrefsStore
 import com.tvseries.Movies.data.TmdbClient
+import com.tvseries.Movies.data.UpdateClient
 import com.tvseries.Movies.data.TmdbRepository
 import com.tvseries.Movies.data.WikidataClient
 
@@ -21,10 +22,20 @@ class AppContainer(app: Application) {
     val repo = TmdbRepository(client, prefs)
     val wikidata = WikidataClient(http)
     val session = DiscoverSession(repo, prefs)
+
+    /** Plain client (no cache): update checks must always hit the network. */
+    val updates = UpdateClient(
+        okhttp3.OkHttpClient.Builder().connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS).readTimeout(60, java.util.concurrent.TimeUnit.SECONDS).callTimeout(10, java.util.concurrent.TimeUnit.MINUTES).build(),
+        BuildConfig.UPDATE_REPO,
+        { prefs.updateToken.value },
+    )
     val ads: AdsProvider = AdsModule.provide(BuildConfig.START_IO_APP_ID)
 
     /** One-shot selection handed from Home to the filter screen. */
     var presetSelection: Selection? = null
+
+    /** Titles handed to the final filtering stage (set by the filter screen). */
+    var finalCandidates: List<WorkCard> = emptyList()
 
     /** Titles chosen for side-by-side comparison (max 3). */
     val compare = MutableStateFlow<List<WorkCard>>(emptyList())

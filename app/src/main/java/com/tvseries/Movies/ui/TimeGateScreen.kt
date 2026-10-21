@@ -99,7 +99,7 @@ class TimeGateState(val clock: JourneyClock) {
     var timeMs by mutableLongStateOf(0L)
     val stations = mutableStateMapOf<Int, Load<List<WorkCard>>>()
 
-    /** 1x = each front screen stays about 10 seconds (one short trailer clip). */
+    /** 1x = each front screen stays about 5 seconds (one short trailer clip). */
     var speed by mutableFloatStateOf(1f)
     var sound by mutableStateOf(false)
     var activeKey by mutableStateOf<String?>(null)
@@ -210,7 +210,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                 vm.ensure(st.index)
             }
             if (!st.manual) {
-                st.yaw = (st.yaw + 4.5f * st.speed * dt / 1000f) % 360f
+                st.yaw = (st.yaw + 9f * st.speed * dt / 1000f) % 360f
                 st.pitch = 0.35f * sin(st.timeMs / 4200f)
             }
         }
@@ -407,9 +407,9 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
 }
 
 private const val CLIP_START = 6
-private const val CLIP_SECONDS = 10
+private const val CLIP_SECONDS = 5
 
-/** One cinema screen: moving poster everywhere; the front screen plays a ~10 second trailer clip. */
+/** One cinema screen: moving poster everywhere; the front screen plays a ~5 second trailer clip. */
 @Composable
 private fun ScreenFace(card: WorkCard, active: Boolean, videoKey: String?, sound: Boolean, seed: Int, onFail: (Int) -> Unit) {
     val inf = rememberInfiniteTransition(label = "face")
@@ -488,7 +488,7 @@ private fun trailerHtml(key: String): String = """
     </script></body></html>
 """.trimIndent().replace("__KEY__", key).replace("__START__", CLIP_START.toString()).replace("__CLIP__", CLIP_SECONDS.toString())
 
-/** Official YouTube IFrame player (muted autoplay, no controls); loops a ~10 second excerpt. */
+/** Official YouTube IFrame player (muted autoplay, no controls); loops a ~5 second excerpt. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun TrailerPlayer(videoKey: String, sound: Boolean, onFail: (Int) -> Unit, modifier: Modifier) {

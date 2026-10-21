@@ -82,6 +82,9 @@ class Prefs(private val store: KeyValueStore) {
     private val _hideWatched = MutableStateFlow(store.getString(K_HIDE_WATCHED) != "false")
     val hideWatched: StateFlow<Boolean> = _hideWatched.asStateFlow()
 
+    private val _updateToken = MutableStateFlow(store.getString(K_UPDATE_TOKEN) ?: "")
+    val updateToken: StateFlow<String> = _updateToken.asStateFlow()
+
     private val _intent = MutableStateFlow(
         runCatching { store.getString(K_INTENT)?.let { json.decodeFromString(UserIntent.serializer(), it) } }.getOrNull() ?: UserIntent(),
     )
@@ -114,6 +117,8 @@ class Prefs(private val store: KeyValueStore) {
         _watched.value = if (key in _watched.value) _watched.value - key else _watched.value + key
         store.putString(K_WATCHED, json.encodeToString(stringsSer, _watched.value.toList()))
     }
+
+    fun setUpdateToken(v: String) { _updateToken.value = v.trim(); store.putString(K_UPDATE_TOKEN, v.trim()) }
 
     fun setIntent(i: UserIntent) {
         _intent.value = i
@@ -209,6 +214,7 @@ class Prefs(private val store: KeyValueStore) {
         const val K_FAV = "favorites"
         const val K_WATCH = "watchlist"
         const val K_SELECTION = "last_selection"
+        const val K_UPDATE_TOKEN = "update_token"
         const val K_INTENT = "user_intent"
         const val K_TASTE = "taste_profile"
         const val K_REMINDER = "weekly_reminder"

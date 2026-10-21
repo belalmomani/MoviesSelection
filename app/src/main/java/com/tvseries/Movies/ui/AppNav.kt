@@ -58,6 +58,7 @@ object Routes {
     const val PARTY = "party"
     const val COMPARE = "compare"
     const val CHOOSE = "choose"
+    const val FINAL = "final"
     const val TIMEGATE = "timegate"
     const val TASTE = "taste"
     const val MYSTERY = "mystery"
@@ -176,7 +177,10 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
                 )
             }
             composable(Routes.FILTER) {
-                FilterScreen(onOpen = openCard, onCompare = { list ->
+                FilterScreen(onOpen = openCard, onFinalStage = { list ->
+                    container.finalCandidates = list.take(12)
+                    nav.navigate(Routes.FINAL)
+                }, onCompare = { list ->
                     container.compare.value = list.take(3)
                     nav.navigate(Routes.COMPARE)
                 })
@@ -190,6 +194,7 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
                 MoodScreen(onBack = { nav.popBackStack() }, onApply = { sel -> nav.popBackStack(); openFilter(sel) })
             }
             composable(Routes.TIMEGATE) { TimeGateScreen(onExit = { nav.popBackStack() }, onOpen = openCard) }
+            composable(Routes.FINAL) { FinalStageScreen(container, onBack = { nav.popBackStack() }, onOpen = openCard) }
             composable(Routes.CHOOSE) {
                 ChooseScreen(onBack = { nav.popBackStack() }, onDone = { nav.popBackStack(); nav.navigate(Routes.DOORS) })
             }

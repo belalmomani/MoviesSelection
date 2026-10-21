@@ -10,6 +10,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalContext
 import com.tvseries.Movies.reminder.ReminderScheduler
+import com.tvseries.Movies.data.UpdateException
+import com.tvseries.Movies.data.UpdateInfo
+import com.tvseries.Movies.data.UpdateInstaller
+import com.tvseries.Movies.data.Updates
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,6 +59,27 @@ private fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
+sealed interface UpdateUi {
+    data object Idle : UpdateUi
+    data object Checking : UpdateUi
+    data object UpToDate : UpdateUi
+    data class Available(val info: UpdateInfo) : UpdateUi
+    data class Downloading(val percent: Int) : UpdateUi
+    data object Ready : UpdateUi
+    data class Failed(val kind: UpdateException.Kind?) : UpdateUi
+}
+
+@Composable
+private fun updateError(kind: UpdateException.Kind?): String = when (kind) {
+    UpdateException.Kind.NO_REPO -> tr("لم يُضبط مستودع التحديثات (UPDATE_REPO في config.properties).", "No update repository configured (UPDATE_REPO in config.properties).")
+    UpdateException.Kind.NOT_FOUND -> tr("لا يوجد إصدار منشور، أو المستودع خاص: أضف رمز وصول أدناه.", "No published release, or the repository is private: add an access token below.")
+    UpdateException.Kind.UNAUTHORIZED -> tr("رمز الوصول غير صالح أو منتهٍ.", "The access token is invalid or expired.")
+    UpdateException.Kind.NETWORK -> tr("تعذّر الاتصال بالإنترنت.", "Could not connect.")
+    UpdateException.Kind.PARSE -> tr("استجابة غير مفهومة من GitHub.", "Unexpected response from GitHub.")
+    UpdateException.Kind.NO_ASSET -> tr("الإصدار المنشور لا يحوي ملف APK.", "The release has no APK file.")
+    null -> tr("تعذّر تنفيذ العملية.", "The operation failed.")
+}
+
 @Composable
 fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val p = container.prefs
@@ -64,6 +92,22 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val hideWatched by p.hideWatched.collectAsState()
     val reminder by p.weeklyReminder.collectAsState()
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val updateToken by p.updateToken.collectAsState()
+    var tokenInput by remember { mutableStateOf(updateToken) }
+    var upd by remember { mutableStateOf<UpdateUi>(UpdateUi.Idle) }
+    fun checkUpdate() {
+        upd = UpdateUi.Checking
+        scope.launch {
+            upd = try {
+                val info = container.updates.latest()
+                if (info != null && Updates.isNewer(info.build, BuildConfig.BUILD_NUMBER)) UpdateUi.Available(info) else UpdateUi.UpToDate
+            } catch (e: UpdateException) {
+                UpdateUi.Failed(e.kind)
+            }
+        }
+    }
+    LaunchedEffect(Unit) { checkUpdate() }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             p.setWeeklyReminder(true)
@@ -74,6 +118,52 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(tr("الإعدادات", "Settings"), style = MaterialTheme.typography.titleLarge)
+
+        Text(tr("التحديث", "Update"), style = MaterialTheme.typography.titleSmall)
+        Text(
+            tr("الإصدار الحالي: ", "Current version: ") + "v${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        when (val u = upd) {
+            is UpdateUi.Idle -> {}
+            is UpdateUi.Checking -> Text(tr("جاري البحث عن تحديث...", "Checking for updates..."), style = MaterialTheme.typography.bodySmall)
+            is UpdateUi.UpToDate -> Text(tr("✓ أنت على أحدث إصدار.", "✓ You are up to date."), style = MaterialTheme.typography.bodyMedium)
+            is UpdateUi.Available -> {
+                Text(tr("🔔 يتوفر تحديث جديد (build ${u.info.build}).", "🔔 A new update is available (build ${u.info.build})."), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Button(onClick = {
+                    upd = UpdateUi.Downloading(0)
+                    scope.launch {
+                        upd = try {
+                            container.updates.download(u.info, UpdateInstaller.apkFile(ctx)) { pct -> upd = UpdateUi.Downloading(pct) }
+                            UpdateUi.Ready
+                        } catch (e: UpdateException) {
+                            UpdateUi.Failed(e.kind)
+                        }
+                    }
+                }) { Text(tr("تنزيل وتثبيت التحديث", "Download & install update")) }
+            }
+            is UpdateUi.Downloading -> Text(tr("جاري التنزيل ${u.percent}%", "Downloading ${u.percent}%"), style = MaterialTheme.typography.bodyMedium)
+            is UpdateUi.Ready -> {
+                Text(tr("اكتمل التنزيل. اضغط للتثبيت فوق النسخة الحالية (دون حذفها).", "Downloaded. Tap to install over the current version (no uninstall)."), style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { UpdateInstaller.install(ctx, UpdateInstaller.apkFile(ctx)) }) { Text(tr("تثبيت الآن", "Install now")) }
+            }
+            is UpdateUi.Failed -> Text(updateError(u.kind), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        OutlinedButton(onClick = { checkUpdate() }, enabled = upd !is UpdateUi.Checking && upd !is UpdateUi.Downloading) { Text(tr("تحقق من وجود تحديث", "Check for updates")) }
+        Text(
+            tr("رمز وصول GitHub (للمستودع الخاص فقط، صلاحية قراءة المحتوى):", "GitHub access token (private repo only, read-only contents):"),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = tokenInput, onValueChange = { tokenInput = it }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(), label = { Text("GitHub token") }, modifier = Modifier.fillMaxWidth(),
+        )
+        Button(onClick = { p.setUpdateToken(tokenInput); checkUpdate() }) { Text(tr("حفظ الرمز وإعادة التحقق", "Save token & recheck")) }
+        Text(
+            tr("لا يُثبَّت التحديث فوق النسخة الحالية إلا إذا طابق توقيعها؛ النسخ المبنية بعد هذا الإصدار تحمل التوقيع نفسه.", "An update installs over the current version only if the signature matches; builds from this version on share the same signature."),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HorizontalDivider()
 
         Text(tr("اللغة", "Language"), style = MaterialTheme.typography.titleSmall)
         RadioRow("العربية", lang == "ar") { p.setLanguage("ar") }

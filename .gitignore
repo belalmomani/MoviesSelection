@@ -9,3 +9,6 @@ captures/
 .externalNativeBuild/
 .cxx/
 secrets.properties
+
+# the shared TEST signing key must be committed (see app/signing)
+!app/signing/*.keystore
