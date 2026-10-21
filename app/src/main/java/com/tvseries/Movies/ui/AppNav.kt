@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -132,8 +135,11 @@ private fun NavHostController.goTab(route: String) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
+    val update by container.updateAvailable.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(Unit) { container.checkUpdateQuietly() }
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
@@ -161,7 +167,13 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
                         NavigationBarItem(
                             selected = current == t.route,
                             onClick = { nav.goTab(t.route) },
-                            icon = { Icon(t.icon, contentDescription = null) },
+                            icon = {
+                                if (t.route == Routes.SETTINGS && update != null) {
+                                    BadgedBox(badge = { Badge() }) { Icon(t.icon, contentDescription = null) }
+                                } else {
+                                    Icon(t.icon, contentDescription = null)
+                                }
+                            },
                             label = { Text(tr(t.ar, t.en)) },
                         )
                     }

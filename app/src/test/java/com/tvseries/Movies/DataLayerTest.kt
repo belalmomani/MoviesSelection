@@ -148,16 +148,15 @@ class DataLayerTest {
 
     @Test fun finalStageNarrowsAndAdvances() {
         val f = com.tvseries.Movies.core.FinalStage
-        val st = com.tvseries.Movies.core.Stage
         val keys = listOf("a", "b", "c", "d", "e", "f")
         assertEquals(keys, f.narrow(keys, emptySet()))
         assertEquals(listOf("b", "d"), f.narrow(keys, setOf("b", "d")))
-        assertEquals(st.HEROES, f.next(10, null))
-        assertEquals(st.GENRES, f.next(5, st.HEROES))
-        assertEquals(st.STORY, f.next(4, st.GENRES))
-        assertEquals(st.DUEL, f.next(2, st.STORY))
-        assertEquals(st.WINNER, f.next(1, st.STORY))
-        assertEquals(st.DUEL, f.next(2, null))
+        assertEquals(com.tvseries.Movies.core.Stage.HEROES, f.next(10, null))
+        assertEquals(com.tvseries.Movies.core.Stage.GENRES, f.next(5, com.tvseries.Movies.core.Stage.HEROES))
+        assertEquals(com.tvseries.Movies.core.Stage.STORY, f.next(4, com.tvseries.Movies.core.Stage.GENRES))
+        assertEquals(com.tvseries.Movies.core.Stage.DUEL, f.next(2, com.tvseries.Movies.core.Stage.STORY))
+        assertEquals(com.tvseries.Movies.core.Stage.WINNER, f.next(1, com.tvseries.Movies.core.Stage.STORY))
+        assertEquals(com.tvseries.Movies.core.Stage.DUEL, f.next(2, null))
     }
 
     @Test fun updateCheckFindsNewerBuildAndReportsMissingRelease() = runBlocking {

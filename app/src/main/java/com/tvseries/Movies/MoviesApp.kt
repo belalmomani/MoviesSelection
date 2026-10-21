@@ -12,6 +12,9 @@ import com.tvseries.Movies.data.Prefs
 import com.tvseries.Movies.data.SharedPrefsStore
 import com.tvseries.Movies.data.TmdbClient
 import com.tvseries.Movies.data.UpdateClient
+import com.tvseries.Movies.data.UpdateException
+import com.tvseries.Movies.data.UpdateInfo
+import com.tvseries.Movies.data.Updates
 import com.tvseries.Movies.data.TmdbRepository
 import com.tvseries.Movies.data.WikidataClient
 
@@ -30,6 +33,18 @@ class AppContainer(app: Application) {
         { prefs.updateToken.value },
     )
     val ads: AdsProvider = AdsModule.provide(BuildConfig.START_IO_APP_ID)
+
+    /** A newer build published on GitHub (null = none / unknown). Drives the badge on the Settings tab. */
+    val updateAvailable = MutableStateFlow<UpdateInfo?>(null)
+
+    suspend fun checkUpdateQuietly() {
+        try {
+            val info = updates.latest()
+            updateAvailable.value = info?.takeIf { Updates.isNewer(it.build, BuildConfig.BUILD_NUMBER) }
+        } catch (e: UpdateException) {
+            // silent: the Settings page shows the reason when the user checks manually
+        }
+    }
 
     /** One-shot selection handed from Home to the filter screen. */
     var presetSelection: Selection? = null
