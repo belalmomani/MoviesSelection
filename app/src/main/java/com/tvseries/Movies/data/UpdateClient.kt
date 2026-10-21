@@ -21,10 +21,11 @@ data class ReleaseAsset(
 @Serializable
 data class ReleaseDto(
     @SerialName("tag_name") val tag: String = "",
+    val body: String? = null,
     val assets: List<ReleaseAsset> = emptyList(),
 )
 
-data class UpdateInfo(val build: Int, val tag: String, val apiUrl: String, val browserUrl: String)
+data class UpdateInfo(val build: Int, val tag: String, val apiUrl: String, val browserUrl: String, val notes: String = "")
 
 class UpdateException(val kind: Kind, message: String, cause: Throwable? = null) : Exception(message, cause) {
     enum class Kind { NO_REPO, NOT_FOUND, UNAUTHORIZED, NETWORK, PARSE, NO_ASSET }
@@ -75,7 +76,7 @@ class UpdateClient(
                 val build = Updates.buildOf(rel.tag) ?: return@use null
                 val asset = rel.assets.firstOrNull { it.name.endsWith(".apk") }
                     ?: throw UpdateException(UpdateException.Kind.NO_ASSET, "Release has no APK")
-                UpdateInfo(build, rel.tag, asset.url, asset.browserUrl)
+                UpdateInfo(build, rel.tag, asset.url, asset.browserUrl, rel.body.orEmpty())
             }
         } catch (e: IOException) {
             throw UpdateException(UpdateException.Kind.NETWORK, "No connection", e)

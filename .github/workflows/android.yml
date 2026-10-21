@@ -85,11 +85,14 @@ jobs:
         if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk MoviesSelection.apk
+          NOTES="Build ${{ github.run_number }}"
+          if [ -n "$COMMIT_MSG" ]; then NOTES="$NOTES - $COMMIT_MSG"; fi
           gh release create "build-${{ github.run_number }}" MoviesSelection.apk \
             --title "Build ${{ github.run_number }}" \
-            --notes "Test build ${{ github.run_number }} (versionCode $((100 + ${{ github.run_number }})))" \
+            --notes "$NOTES" \
             --latest
 
       - name: Upload test reports

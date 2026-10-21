@@ -130,6 +130,10 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
             is UpdateUi.UpToDate -> Text(tr("✓ أنت على أحدث إصدار.", "✓ You are up to date."), style = MaterialTheme.typography.bodyMedium)
             is UpdateUi.Available -> {
                 Text(tr("🔔 يتوفر تحديث جديد (build ${u.info.build}).", "🔔 A new update is available (build ${u.info.build})."), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                if (u.info.notes.isNotBlank()) {
+                    Text(tr("ما الجديد:", "What's new:"), style = MaterialTheme.typography.labelMedium)
+                    Text(u.info.notes.trim().take(500), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Button(onClick = {
                     upd = UpdateUi.Downloading(0)
                     scope.launch {
