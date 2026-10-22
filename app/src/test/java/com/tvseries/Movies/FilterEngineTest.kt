@@ -265,6 +265,18 @@ class FilterEngineTest {
         assertEquals(setOf(-1, 0, 1), rows) // above, around and below the viewer
         assertEquals(-170f, com.tvseries.Movies.core.wrapDegrees(190f), 1e-4f)
         assertEquals(170f, com.tvseries.Movies.core.wrapDegrees(-190f), 1e-4f)
-        assertEquals(11, com.tvseries.Movies.core.Eras.starts.size)
+        // screens differ in size and distance
+        val slots = com.tvseries.Movies.core.layoutSlots(18)
+        assertTrue(slots.map { it.scale }.toSet().size > 3)
+        assertTrue(slots.map { it.distance }.toSet().size > 3)
+    }
+
+    @Test fun timeWorldsAreWellFormed() {
+        val w = com.tvseries.Movies.core.TimeWorlds.all
+        assertTrue(w.size >= 10)
+        assertEquals(w.size, w.map { it.id }.toSet().size)
+        // every station has a real data source (keywords, genre or years) - nothing is hard-coded
+        assertTrue(w.all { it.keywords.isNotEmpty() || it.genres.isNotEmpty() || it.yearFrom != null })
+        assertEquals(com.tvseries.Movies.core.Env.values().toSet(), w.map { it.env }.toSet()) // each scenery is used
     }
 }

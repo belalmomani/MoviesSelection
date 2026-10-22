@@ -13,12 +13,13 @@ data class DiscoverQuery(
     val yearTo: Int? = null,
     val minRating: Int? = null,
     val maxVotes: Int? = null,
+    val keywords: Set<Int> = emptySet(),
     val minVotes: Int = 100,
     val includeAdult: Boolean = false,
     val sort: String = "popularity.desc",
 ) {
     fun signature(): String =
-        "g=${genres.sorted()};l=$language;c=${countries.sorted()};y=$yearFrom-$yearTo;r=$minRating;v=$minVotes-$maxVotes;a=$includeAdult;s=$sort"
+        "g=${genres.sorted()};l=$language;c=${countries.sorted()};y=$yearFrom-$yearTo;r=$minRating;v=$minVotes-$maxVotes;k=${keywords.sorted()};a=$includeAdult;s=$sort"
 
     fun params(media: String, page: Int, uiLanguage: String): Map<String, String> {
         val m = LinkedHashMap<String, String>()
@@ -32,6 +33,7 @@ data class DiscoverQuery(
         if (countries.isNotEmpty()) m["with_origin_country"] = countries.sorted().joinToString("|")
         minRating?.let { m["vote_average.gte"] = it.toString() }
         maxVotes?.let { m["vote_count.lte"] = it.toString() }
+        if (keywords.isNotEmpty()) m["with_keywords"] = keywords.sorted().joinToString("|")
         val from = if (media == "movie") "primary_release_date.gte" else "first_air_date.gte"
         val to = if (media == "movie") "primary_release_date.lte" else "first_air_date.lte"
         yearFrom?.let { m[from] = "$it-01-01" }

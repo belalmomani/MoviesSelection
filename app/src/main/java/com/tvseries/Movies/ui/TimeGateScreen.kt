@@ -2,7 +2,15 @@
 
 package com.tvseries.Movies.ui
 
+import android.annotation.SuppressLint
 import android.app.Application
+import android.graphics.Color as AndroidColor
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -10,16 +18,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import android.annotation.SuppressLint
-import android.graphics.Color as AndroidColor
-import android.os.Handler
-import android.os.Looper
-import android.webkit.JavascriptInterface
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,6 +27,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,6 +41,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -48,12 +49,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,17 +68,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tvseries.Movies.MoviesApp
-import com.tvseries.Movies.core.Eras
 import com.tvseries.Movies.core.JourneyClock
+import com.tvseries.Movies.core.TimeWorld
+import com.tvseries.Movies.core.TimeWorlds
 import com.tvseries.Movies.core.layoutSlots
 import com.tvseries.Movies.core.wrapDegrees
 import com.tvseries.Movies.data.Img
@@ -85,7 +92,10 @@ import com.tvseries.Movies.data.toCard
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
+import kotlin.random.Random
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Journey state lives in the view model, so opening a title and coming back resumes at the same place. */
@@ -109,19 +119,52 @@ class TimeGateState(val clock: JourneyClock) {
 
     /** card key -> why its trailer could not play (YouTube error code, or -1 = never started). */
     val trailerCodes = mutableStateMapOf<String, Int>()
+
+    // Opening sequence (played once per visit of the app session).
+    var introMs by mutableLongStateOf(0L)
+    var introDone by mutableStateOf(false)
+
+    // Extras.
+    var radar by mutableStateOf(false)
+    var pendingYawJump by mutableStateOf(false)
+    var yawTarget by mutableStateOf<Float?>(null)
+    var pitchTarget by mutableStateOf<Float?>(null)
+
+    // Attention screen: one screen is highlighted for a few seconds; the user may approach or ignore it.
+    var spotSlot by mutableIntStateOf(-1)
+    var spotEnv by mutableFloatStateOf(0f)
+    var spotStart by mutableLongStateOf(0L)
+    var nextSpotAt by mutableLongStateOf(20000L)
+
+    // Which pool title each screen currently shows (titles rotate during the journey).
+    val shown = mutableStateListOf<Int>()
+    var slotCount by mutableIntStateOf(0)
+    var frontSlot by mutableIntStateOf(0)
+    var lastSwapAt by mutableLongStateOf(0L)
 }
 
 class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
     private val c = (app as MoviesApp).container
-    val state = TimeGateState(JourneyClock(Eras.starts.size))
+    val state = TimeGateState(JourneyClock(TimeWorlds.all.size))
+    private val keywordCache = HashMap<String, List<Int>>()
 
     /** Loads the station and its neighbours so the next jump already has screens to show. */
     fun ensure(i: Int) {
-        val n = Eras.starts.size
+        val n = TimeWorlds.all.size
         for (k in listOf(i, (i + 1) % n, (i - 1 + n) % n)) load(k, false)
     }
 
     fun retry(i: Int) = load(i, true)
+
+    /** Fills the radar: fetches every station once (slowly, to stay polite to TMDB). */
+    fun scanAll() {
+        viewModelScope.launch {
+            for (i in TimeWorlds.all.indices) {
+                load(i, false)
+                delay(500)
+            }
+        }
+    }
 
     private fun load(i: Int, force: Boolean) {
         val cur = state.stations[i]
@@ -129,22 +172,41 @@ class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
         state.stations[i] = Load.Loading
         viewModelScope.launch {
             state.stations[i] = try {
-                val start = Eras.starts[i]
-                val q = c.repo.baseQuery().copy(
-                    yearFrom = start, yearTo = start + 9, minVotes = Eras.minVotes(start), minRating = 6, sort = "vote_count.desc",
-                )
-                val movies = c.repo.discover("movie", 1, q).results.mapNotNull { it.toCard("movie") }.filter { it.posterPath != null }.take(12)
-                val shows = c.repo.discover("tv", 1, q).results.mapNotNull { it.toCard("tv") }.filter { it.posterPath != null }.take(6)
-                val mixed = ArrayList<WorkCard>()
-                for (k in 0 until maxOf(movies.size, shows.size)) {
-                    movies.getOrNull(k)?.let { mixed += it }
-                    shows.getOrNull(k)?.let { mixed += it }
-                }
-                Load.Ok(mixed.distinctBy { it.key }.take(18))
+                Load.Ok(fetchWorld(TimeWorlds.all[i]))
             } catch (e: TmdbError) {
                 Load.Fail(e)
             }
         }
+    }
+
+    /** Resolves keyword phrases with TMDB's own keyword search, then discovers titles. Nothing is invented. */
+    private suspend fun keywordIds(term: String): List<Int> {
+        keywordCache[term]?.let { return it }
+        val found = c.repo.searchKeywords(term)
+        val exact = found.filter { it.name.equals(term, ignoreCase = true) }
+        val ids = (if (exact.isNotEmpty()) exact.take(2) else found.take(1)).map { it.id }
+        keywordCache[term] = ids
+        return ids
+    }
+
+    private suspend fun fetchWorld(w: TimeWorld): List<WorkCard> {
+        val ids = LinkedHashSet<Int>()
+        for (term in w.keywords) ids += keywordIds(term)
+        val hasOtherSource = w.genres.isNotEmpty() || w.yearFrom != null
+        if (w.keywords.isNotEmpty() && ids.isEmpty() && !hasOtherSource) return emptyList()
+        val q = c.repo.baseQuery().copy(
+            minVotes = w.minVotes, sort = "vote_count.desc", keywords = ids,
+            genres = w.genres, yearFrom = w.yearFrom, yearTo = w.yearTo,
+        )
+        val movies = (c.repo.discover("movie", 1, q).results + c.repo.discover("movie", 2, q).results)
+            .mapNotNull { it.toCard("movie") }.filter { it.posterPath != null }.take(22)
+        val shows = c.repo.discover("tv", 1, q).results.mapNotNull { it.toCard("tv") }.filter { it.posterPath != null }.take(10)
+        val mixed = ArrayList<WorkCard>()
+        for (k in 0 until maxOf(movies.size, shows.size)) {
+            movies.getOrNull(k)?.let { mixed += it }
+            shows.getOrNull(k)?.let { mixed += it }
+        }
+        return mixed.distinctBy { it.key }.take(32)
     }
 
     fun ensureTrailer(card: WorkCard) {
@@ -182,6 +244,27 @@ class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
 
     fun jump(i: Int) = state.clock.jumpTo(i)
     fun step(d: Int) = state.clock.step(d)
+
+    /** Sudden jump to a random station, preferring ones known to have enough titles. */
+    fun randomJump() {
+        val n = TimeWorlds.all.size
+        val others = (0 until n).filter { it != state.index }
+        val good = others.filter { ((state.stations[it] as? Load.Ok)?.value?.size ?: 0) >= TimeWorlds.ENOUGH }
+        val pick = (if (good.isNotEmpty()) good else others).random()
+        state.pendingYawJump = true
+        state.clock.jumpTo(pick)
+    }
+
+    /** Swaps one non-front screen to the next unseen title of the station. */
+    fun rotateOneTitle() {
+        val pool = (state.stations[state.index] as? Load.Ok)?.value ?: return
+        val n = state.slotCount
+        if (pool.size <= n || state.shown.size < n || n < 2) return
+        val slot = (0 until n).filter { it != state.frontSlot }.random()
+        val used = state.shown.toSet()
+        val next = (0 until pool.size).firstOrNull { it !in used && it > (state.shown.maxOrNull() ?: 0) } ?: (0 until pool.size).firstOrNull { it !in used } ?: return
+        state.shown[slot] = next
+    }
 }
 
 @Composable
@@ -202,83 +285,157 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
             val now = withFrameNanos { it }
             val dt = ((now - last) / 1_000_000L).coerceIn(0L, 100L)
             last = now
-            val changed = st.clock.tick(dt)
             st.timeMs += dt
+            if (!st.introDone) {
+                st.introMs += dt
+                if (st.introMs >= 7000L) st.introDone = true
+                continue
+            }
+            val changed = st.clock.tick(dt)
             st.warp = st.clock.warpFraction
             if (changed) {
                 st.index = st.clock.index
                 vm.ensure(st.index)
+                if (st.pendingYawJump) {
+                    st.yaw = (st.yaw + 90f + Random.nextFloat() * 180f) % 360f
+                    st.pendingYawJump = false
+                }
             }
-            if (!st.manual) {
+
+            // Camera: glide to a requested target, otherwise drift automatically (unless in manual mode).
+            val yt = st.yawTarget
+            val pt = st.pitchTarget
+            if (yt != null || pt != null) {
+                if (yt != null) {
+                    val d = wrapDegrees(yt - st.yaw)
+                    if (abs(d) < 1f) {
+                        st.yaw = yt
+                        st.yawTarget = null
+                    } else {
+                        st.yaw = (st.yaw + d * min(1f, dt / 260f) + 360f) % 360f
+                    }
+                }
+                if (pt != null) {
+                    val d = pt - st.pitch
+                    if (abs(d) < 0.02f) {
+                        st.pitch = pt
+                        st.pitchTarget = null
+                    } else {
+                        st.pitch += d * min(1f, dt / 260f)
+                    }
+                }
+            } else if (!st.manual) {
                 st.yaw = (st.yaw + 9f * st.speed * dt / 1000f) % 360f
                 st.pitch = 0.35f * sin(st.timeMs / 4200f)
+            }
+
+            // Attention screen: highlights one screen for ~4.5s every ~22s. Never opens anything by itself.
+            if (st.spotSlot < 0) {
+                if (st.timeMs >= st.nextSpotAt && st.slotCount > 3) {
+                    val choices = (0 until st.slotCount).filter { it != st.frontSlot }
+                    if (choices.isNotEmpty()) {
+                        st.spotSlot = choices.random()
+                        st.spotStart = st.timeMs
+                    }
+                }
+            } else {
+                val p = (st.timeMs - st.spotStart) / 4500f
+                if (p >= 1f) {
+                    st.spotSlot = -1
+                    st.spotEnv = 0f
+                    st.nextSpotAt = st.timeMs + 22000L
+                } else {
+                    st.spotEnv = sin(PI.toFloat() * p)
+                }
+            }
+
+            // Titles rotate while the journey runs.
+            if (st.advancing && st.timeMs - st.lastSwapAt > 4200L) {
+                st.lastSwapAt = st.timeMs
+                vm.rotateOneTitle()
             }
         }
     }
 
-    val start = Eras.starts[st.index]
-    val colors = Eras.palette[start] ?: (0xFF111827L to 0xFF7C3AEDL)
-    val c1 by animateColorAsState(Color(colors.first), tween(1200), label = "c1")
-    val c2 by animateColorAsState(Color(colors.second), tween(1200), label = "c2")
+    val world = TimeWorlds.all[st.index]
+    val c1 by animateColorAsState(Color(world.colors.first), tween(1200), label = "c1")
+    val c2 by animateColorAsState(Color(world.colors.second), tween(1200), label = "c2")
     val data = st.stations[st.index]
     val list = (data as? Load.Ok)?.value.orEmpty()
-    val slots = remember(list.size) { layoutSlots(list.size) }
+    val slotN = min(18, list.size)
+    val slots = remember(slotN) { layoutSlots(slotN) }
     val bucket by remember { derivedStateOf { (st.yaw / 6f).toInt() } }
+
+    SideEffect { st.slotCount = slotN }
+    LaunchedEffect(st.index, slotN) {
+        st.shown.clear()
+        st.shown.addAll(0 until slotN)
+    }
+
     // The middle-ring screen facing the viewer is the one that plays its short trailer.
+    val frontSlot by remember(slots) {
+        derivedStateOf { slots.filter { it.row == 0 }.minByOrNull { abs(wrapDegrees(it.angle - st.yaw)) }?.index ?: 0 }
+    }
+    SideEffect { st.frontSlot = frontSlot }
     val frontKey by remember(slots, list) {
-        derivedStateOf {
-            slots.filter { it.row == 0 }.minByOrNull { abs(wrapDegrees(it.angle - st.yaw)) }?.let { list.getOrNull(it.index)?.key }
-        }
+        derivedStateOf { list.getOrNull(st.shown.getOrNull(frontSlot) ?: frontSlot)?.key }
     }
     LaunchedEffect(frontKey) {
         val k = frontKey
-        if (k != null) {
+        if (k != null && st.introDone) {
             delay(if (st.activeKey == null) 400L else 1200L)
             st.activeKey = k
             list.firstOrNull { it.key == k }?.let { vm.ensureTrailer(it) }
         }
     }
+    // Stations with no titles at all are skipped while travelling automatically.
+    LaunchedEffect(st.index, data) {
+        if (st.introDone && data is Load.Ok && data.value.isEmpty() && st.advancing) {
+            delay(2200)
+            vm.step(1)
+        }
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val density = LocalDensity.current
-        val screenW = maxWidth * 0.34f
+        val screenW = maxWidth * 0.30f
         val screenH = screenW * 1.5f
         val radiusPx = with(density) { (maxWidth * 0.40f).toPx() }
         val rowPx = with(density) { (screenH * 0.95f).toPx() }
         val shape = RoundedCornerShape(10.dp)
 
-        // Environment: era gradient + time tunnel streaks that intensify during a jump.
+        // Environment: the world itself changes (gradient + scenery), with time-tunnel streaks during jumps.
         Canvas(Modifier.fillMaxSize()) {
             drawRect(Brush.verticalGradient(listOf(c1, c2)))
-            val hump = sin(PI.toFloat() * st.warp)
             val t = st.timeMs / 1000f
+            drawEnvironment(world.env, t)
+            val hump = sin(PI.toFloat() * st.warp)
             val cx = size.width / 2f
             val cy = size.height / 2f
-            for (k in 0 until 48) {
-                val ang = k * (2f * PI.toFloat() / 48f)
-                val phase = (t * (0.25f + 1.6f * hump) + k * 0.137f) % 1f
-                val r0 = size.minDimension * (0.12f + 0.7f * phase)
-                val r1 = r0 + size.minDimension * (0.03f + 0.3f * hump)
-                drawLine(
-                    Color.White.copy(alpha = (0.08f + 0.45f * hump) * (1f - phase)),
-                    Offset(cx + cos(ang) * r0, cy + sin(ang) * r0),
-                    Offset(cx + cos(ang) * r1, cy + sin(ang) * r1),
-                    strokeWidth = 2f + 3f * hump,
-                )
+            if (hump > 0.02f) {
+                for (k in 0 until 48) {
+                    val ang = k * (2f * PI.toFloat() / 48f)
+                    val phase = (t * (0.25f + 1.6f * hump) + k * 0.137f) % 1f
+                    val r0 = size.minDimension * (0.12f + 0.7f * phase)
+                    val r1 = r0 + size.minDimension * (0.03f + 0.3f * hump)
+                    drawLine(
+                        Color.White.copy(alpha = (0.08f + 0.45f * hump) * (1f - phase)),
+                        Offset(cx + cos(ang) * r0, cy + sin(ang) * r0), Offset(cx + cos(ang) * r1, cy + sin(ang) * r1),
+                        strokeWidth = 2f + 3f * hump,
+                    )
+                }
             }
-            drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f)), Offset(cx, cy), size.maxDimension * 0.75f))
+            drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)), Offset(cx, cy), size.maxDimension * 0.75f))
         }
-        Text(
-            Eras.label(start), color = Color.White.copy(alpha = 0.10f), style = androidx.compose.material3.MaterialTheme.typography.displayLarge,
-            modifier = Modifier.align(Alignment.Center),
-        )
 
-        // The 360° ring of screens: left, right, front, behind, above and below.
+        // The 360 degree ring of screens, with different sizes and distances: around, above and below you.
         Box(
             Modifier.fillMaxSize().pointerInput(st.manual) {
                 if (st.manual) {
                     detectDragGestures { change, drag ->
                         change.consume()
+                        st.yawTarget = null
+                        st.pitchTarget = null
                         st.yaw = (((st.yaw - drag.x * 0.4f) % 360f) + 360f) % 360f
                         st.pitch = (st.pitch - drag.y * 0.004f).coerceIn(-1f, 1f)
                     }
@@ -288,50 +445,78 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
             // Draw far screens first so near ones overlap them (re-sorted every ~6 degrees).
             val ordered = slots.sortedBy { cos(Math.toRadians((it.angle - bucket * 6f).toDouble())) }
             ordered.forEach { slot ->
-                val card = list.getOrNull(slot.index)
-                if (card != null) key(card.key) {
-                    Box(
-                        Modifier.align(Alignment.Center).size(screenW, screenH)
-                            .graphicsLayer {
-                                val d = wrapDegrees(slot.angle - st.yaw)
-                                val rad = Math.toRadians(d.toDouble())
-                                val z = cos(rad).toFloat()
-                                val near = (z + 1f) / 2f
-                                val fade = abs(2f * st.warp - 1f)
-                                val shift = (slot.row - st.pitch) * rowPx
-                                translationX = sin(rad).toFloat() * radiusPx
-                                translationY = shift
-                                scaleX = 0.5f + 0.5f * near
-                                scaleY = 0.5f + 0.5f * near
-                                alpha = (0.25f + 0.75f * near) * fade
-                                rotationY = (-d).coerceIn(-70f, 70f)
-                                rotationX = shift / rowPx * -12f
-                                cameraDistance = 14f * this.density
+                key(slot.index) {
+                    val ci = st.shown.getOrNull(slot.index) ?: slot.index
+                    val card = list.getOrNull(ci)
+                    if (card != null) {
+                        Box(
+                            Modifier.align(Alignment.Center).size(screenW * slot.scale, screenH * slot.scale)
+                                .graphicsLayer {
+                                    val d = wrapDegrees(slot.angle - st.yaw)
+                                    val rad = Math.toRadians(d.toDouble())
+                                    val z = cos(rad).toFloat()
+                                    val near = (z + 1f) / 2f
+                                    val fade = abs(2f * st.warp - 1f)
+                                    val spot = if (st.spotSlot == slot.index) st.spotEnv else 0f
+                                    val shift = (slot.row - st.pitch) * rowPx
+                                    translationX = sin(rad).toFloat() * radiusPx * slot.distance
+                                    translationY = shift
+                                    val s = (0.5f + 0.5f * near) * (1f + 0.3f * spot)
+                                    scaleX = s
+                                    scaleY = s
+                                    alpha = min(1f, (0.25f + 0.75f * near + 0.4f * spot) * fade)
+                                    rotationY = (-d).coerceIn(-70f, 70f)
+                                    rotationX = shift / rowPx * -12f
+                                    cameraDistance = 14f * this.density
+                                }
+                                .clip(shape)
+                                .border(2.dp, Color.White.copy(alpha = 0.35f), shape)
+                                .clickable { onOpen(card) },
+                        ) {
+                            Crossfade(targetState = card, label = "screen") { c ->
+                                ScreenFace(
+                                    card = c, active = st.activeKey == c.key, videoKey = st.trailers[c.key],
+                                    sound = st.sound, seed = slot.index, slotIndex = slot.index, st = st,
+                                    onFail = { code -> vm.trailerFailed(c.key, code) },
+                                )
                             }
-                            .clip(shape)
-                            .border(2.dp, Color.White.copy(alpha = 0.35f), shape)
-                            .clickable { onOpen(card) },
-                    ) {
-                        val vk = st.trailers[card.key]
-                        ScreenFace(
-                            card = card, active = st.activeKey == card.key,
-                            videoKey = vk, sound = st.sound, seed = slot.index,
-                            onFail = { code -> vm.trailerFailed(card.key, code) },
-                        )
+                        }
                     }
                 }
             }
         }
 
-        // Flash + title during the jump.
+        // Flash + title during a jump.
         Canvas(Modifier.fillMaxSize()) {
             drawRect(Color.White.copy(alpha = 0.55f * sin(PI.toFloat() * st.warp)))
         }
         Text(
-            tr("عبور زمني...", "Time jump..."), color = Color.White,
-            style = androidx.compose.material3.MaterialTheme.typography.headlineMedium,
+            world.name(arabic), color = Color.White, style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.align(Alignment.Center).graphicsLayer { alpha = sin(PI.toFloat() * st.warp) },
         )
+
+        if (st.radar) {
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TimeRadar(
+                    st, arabic,
+                    counts = { i ->
+                        when (val s = st.stations[i]) {
+                            null -> -1
+                            is Load.Loading -> -2
+                            is Load.Fail -> -3
+                            is Load.Ok -> s.value.size
+                        }
+                    },
+                    onPick = { i -> vm.jump(i) },
+                )
+                Text(
+                    tr("أخضر: أعمال كافية • أصفر: قليلة • أحمر: لا بيانات • رمادي: لم تُفحص. اضغط نقطة للانتقال.", "Green: enough titles • Yellow: few • Red: none • Grey: not scanned. Tap a dot to travel."),
+                    color = Color.White, style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(6.dp),
+                )
+                OutlinedButton(onClick = { vm.scanAll() }) { Text(tr("افحص كل المحطات", "Scan all stations"), color = Color.White) }
+            }
+        }
 
         TextButton(onClick = onExit, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
             Text("✕ " + tr("خروج", "Exit"), color = Color.White)
@@ -345,48 +530,68 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(Eras.label(start) + "  ·  " + Eras.name(start, arabic), color = Color.White, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                    Text(world.name(arabic) + "  ·  " + world.sub(arabic), color = Color.White, style = MaterialTheme.typography.titleSmall)
                     val s = data
                     Text(
                         when {
                             s == null || s is Load.Loading -> tr("جاري تحميل أعمال هذه المحطة...", "Loading this station's titles...")
                             s is Load.Fail -> errorText(s.error)
-                            list.isEmpty() -> tr("لا أعمال لهذه المحطة في TMDB.", "No titles for this station on TMDB.")
-                            st.activeKey != null && st.trailerCodes.containsKey(st.activeKey!!) ->
-                                trailerMessage(st.trailerCodes[st.activeKey!!] ?: 0)
+                            list.isEmpty() -> tr("لا أعمال لهذه المحطة في TMDB؛ لن نعرض شيئًا مختلقًا، وسننتقل للتالية.", "TMDB has no titles for this station; nothing is made up, moving on.")
+                            list.size < TimeWorlds.ENOUGH -> tr("بيانات هذه المحطة قليلة (${list.size} فقط).", "Thin data for this station (only ${list.size}).")
+                            st.activeKey != null && st.trailerCodes.containsKey(st.activeKey!!) -> trailerMessage(st.trailerCodes[st.activeKey!!] ?: 0)
                             st.activeKey != null && st.trailers[st.activeKey!!] == "" ->
-                                tr("لا يوجد مقطع إعلاني لهذا العمل؛ تبقى الشاشة بحركة الملصق.", "No trailer for this title; the screen keeps the poster motion.")
+                                tr("لا يوجد مقطع إعلاني لهذا العمل؛ تبقى حركة الملصق.", "No trailer for this title; the screen keeps the poster motion.")
                             else -> if (st.manual) tr("اسحب لتدوير الرؤية 360° والنظر للأعلى والأسفل. اضغط أي شاشة لفتح العمل.", "Drag to look around 360° and up/down. Tap a screen to open it.")
                             else tr("الرحلة تلقائية. اضغط أي شاشة لفتح العمل.", "Automatic journey. Tap any screen to open it.")
                         },
-                        color = Color.White.copy(alpha = 0.8f), style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall,
                     )
                 }
-                Text(tr("التحكم اليدوي", "Manual control"), color = Color.White, style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
+                Text(tr("يدوي", "Manual"), color = Color.White, style = MaterialTheme.typography.labelMedium)
                 Switch(checked = st.manual, onCheckedChange = { vm.setManual(it) }, modifier = Modifier.padding(start = 6.dp))
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(tr("السرعة", "Speed"), color = Color.White, style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
-                listOf(0.5f, 1f, 1.5f, 2f, 3f).forEach { sp ->
+            if (data is Load.Fail) OutlinedButton(onClick = { vm.retry(st.index) }) { Text(tr("إعادة المحاولة", "Retry"), color = Color.White) }
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                item {
+                    AssistChip(onClick = { st.radar = !st.radar }, label = { Text("📡 " + tr("الرادار", "Radar"), color = Color.White) })
+                }
+                item {
+                    AssistChip(onClick = { vm.randomJump() }, label = { Text("⚡ " + tr("قفزة زمنية", "Time leap"), color = Color.White) })
+                }
+                if (st.spotSlot >= 0) item {
                     AssistChip(
-                        onClick = { vm.setSpeed(sp) },
-                        label = { Text("×" + (if (sp % 1f == 0f) sp.toInt().toString() else sp.toString()), color = if (st.speed == sp) Color.Black else Color.White) },
-                        colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(
-                            containerColor = if (st.speed == sp) Color.White else Color.White.copy(alpha = 0.12f),
-                        ),
+                        onClick = {
+                            val sl = layoutSlots(st.slotCount).firstOrNull { it.index == st.spotSlot }
+                            if (sl != null) {
+                                st.yawTarget = sl.angle
+                                st.pitchTarget = sl.row.toFloat()
+                            }
+                        },
+                        label = { Text("✨ " + tr("اقترب من الشاشة المميزة", "Approach the highlighted screen"), color = Color(0xFFFFD54F)) },
                     )
                 }
-                TextButton(onClick = { st.sound = !st.sound }) { Text(if (st.sound) "🔊" else "🔇", color = Color.White) }
+                listOf(0.5f, 1f, 1.5f, 2f, 3f).forEach { sp ->
+                    item {
+                        AssistChip(
+                            onClick = { vm.setSpeed(sp) },
+                            label = { Text("×" + (if (sp % 1f == 0f) sp.toInt().toString() else sp.toString()), color = if (st.speed == sp) Color.Black else Color.White) },
+                            colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(
+                                containerColor = if (st.speed == sp) Color.White else Color.White.copy(alpha = 0.12f),
+                            ),
+                        )
+                    }
+                }
+                item { TextButton(onClick = { st.sound = !st.sound }) { Text(if (st.sound) "🔊" else "🔇", color = Color.White) } }
             }
-            if (data is Load.Fail) OutlinedButton(onClick = { vm.retry(st.index) }) { Text(tr("إعادة المحاولة", "Retry"), color = Color.White) }
 
             if (st.manual) {
                 // Time map: pick any station.
                 LazyRow(contentPadding = PaddingValues(0.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    itemsIndexed(Eras.starts) { i, y ->
+                    itemsIndexed(TimeWorlds.all) { i, w ->
                         AssistChip(
                             onClick = { vm.jump(i) },
-                            label = { Text(Eras.label(y), color = if (i == st.index) Color.Black else Color.White) },
+                            label = { Text(w.name(arabic), color = if (i == st.index) Color.Black else Color.White) },
                             colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(
                                 containerColor = if (i == st.index) Color.White else Color.White.copy(alpha = 0.12f),
                             ),
@@ -394,14 +599,19 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick = { vm.step(-1) }) { Text("⏪ " + tr("الماضي", "Past"), color = Color.White) }
-                    OutlinedButton(onClick = { vm.step(1) }) { Text("⏩ " + tr("المستقبل", "Future"), color = Color.White) }
+                    OutlinedButton(onClick = { vm.step(-1) }) { Text("⏪ " + tr("السابق", "Previous"), color = Color.White) }
+                    OutlinedButton(onClick = { vm.step(1) }) { Text("⏩ " + tr("التالي", "Next"), color = Color.White) }
                     OutlinedButton(onClick = { vm.setAdvancing(!st.advancing) }) {
                         Text(if (st.advancing) "⏸ " + tr("إيقاف الانتقال", "Pause travel") else "▶ " + tr("استئناف الانتقال", "Resume travel"), color = Color.White)
                     }
                 }
                 Button(onClick = { vm.setManual(false) }) { Text(tr("العودة إلى التلقائي", "Back to automatic")) }
             }
+        }
+
+        if (!st.introDone) {
+            val posters = st.stations.values.flatMap { s -> if (s is Load.Ok) s.value else emptyList() }.take(8)
+            TimeGateIntro(st, arabic, posters, onSkip = { st.introMs = 7000L })
         }
     }
 }
@@ -411,7 +621,10 @@ private const val CLIP_SECONDS = 5
 
 /** One cinema screen: moving poster everywhere; the front screen plays a ~5 second trailer clip. */
 @Composable
-private fun ScreenFace(card: WorkCard, active: Boolean, videoKey: String?, sound: Boolean, seed: Int, onFail: (Int) -> Unit) {
+private fun ScreenFace(
+    card: WorkCard, active: Boolean, videoKey: String?, sound: Boolean, seed: Int,
+    slotIndex: Int, st: TimeGateState, onFail: (Int) -> Unit,
+) {
     val inf = rememberInfiniteTransition(label = "face")
     val zoom = inf.animateFloat(
         1.02f, 1.14f, infiniteRepeatable(tween(6500 + (seed % 5) * 700, easing = LinearEasing), RepeatMode.Reverse), label = "zoom",
@@ -439,8 +652,13 @@ private fun ScreenFace(card: WorkCard, active: Boolean, videoKey: String?, sound
                     Offset(x - size.width * 0.3f, 0f), Offset(x + size.width * 0.3f, size.height),
                 ),
             )
+            if (st.spotSlot == slotIndex) {
+                drawRect(Color(0xFFFFD54F).copy(alpha = 0.9f * st.spotEnv), style = Stroke(10f))
+                drawRect(Color(0xFFFFD54F).copy(alpha = 0.18f * st.spotEnv))
+            }
         }
         if (active) Text("🎬", Modifier.align(Alignment.TopEnd).padding(4.dp))
+        if (st.spotSlot == slotIndex) Text("✨", Modifier.align(Alignment.TopStart).padding(4.dp))
     }
 }
 

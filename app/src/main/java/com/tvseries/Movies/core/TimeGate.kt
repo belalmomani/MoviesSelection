@@ -1,46 +1,5 @@
 package com.tvseries.Movies.core
 
-/** One stop of the journey = one decade of cinema. */
-object Eras {
-    val starts: List<Int> = (1920..2020 step 10).toList()
-
-    // Short flavour text (not data): Arabic / English.
-    private val names: Map<Int, Pair<String, String>> = mapOf(
-        1920 to ("العصر الصامت" to "The silent era"),
-        1930 to ("الأبيض والأسود والصوت" to "Black & white meets sound"),
-        1940 to ("سينما الأربعينيات" to "The forties"),
-        1950 to ("الألوان الباهرة" to "Dazzling colour"),
-        1960 to ("موجات التجديد" to "Waves of change"),
-        1970 to ("سينما السبعينيات" to "The seventies"),
-        1980 to ("عصر الفيديو والنيون" to "Video & neon"),
-        1990 to ("العصر الرقمي الأول" to "The first digital age"),
-        2000 to ("الألفية الجديدة" to "The new millennium"),
-        2010 to ("عصر المنصات" to "The streaming age"),
-        2020 to ("الآن" to "Now"),
-    )
-
-    /** Background gradient colours (ARGB) per decade. */
-    val palette: Map<Int, Pair<Long, Long>> = mapOf(
-        1920 to (0xFF3B2F1EL to 0xFF8A6D3BL),
-        1930 to (0xFF151515L to 0xFF6B6B6BL),
-        1940 to (0xFF202B33L to 0xFF5E7380L),
-        1950 to (0xFF2B1D3AL to 0xFFB5466BL),
-        1960 to (0xFF3A2B12L to 0xFFE0A100L),
-        1970 to (0xFF3B1F0FL to 0xFFC2662DL),
-        1980 to (0xFF1B0B3BL to 0xFFFF2E93L),
-        1990 to (0xFF0B2B3BL to 0xFF2EC4B6L),
-        2000 to (0xFF0D1B2AL to 0xFF4A6FA5L),
-        2010 to (0xFF111827L to 0xFF7C3AEDL),
-        2020 to (0xFF050B18L to 0xFF00D4FFL),
-    )
-
-    fun name(start: Int, arabic: Boolean): String = names[start]?.let { if (arabic) it.first else it.second } ?: ""
-    fun label(start: Int): String = "${start}s"
-
-    /** Titles are picked by vote count, so the threshold only needs to exclude near-unknown entries. */
-    fun minVotes(start: Int): Int = if (start <= 1940) 20 else if (start <= 1970) 100 else 300
-}
-
 /** Degrees wrapped into the range from just above -180 up to 180. */
 fun wrapDegrees(d: Float): Float {
     var x = d % 360f
@@ -50,7 +9,18 @@ fun wrapDegrees(d: Float): Float {
 }
 
 /** Where each screen of the current station sits around the viewer: ring row (0 middle, -1 above, +1 below) and angle. */
-data class Slot(val index: Int, val row: Int, val angle: Float)
+data class Slot(
+    val index: Int,
+    val row: Int,
+    val angle: Float,
+    /** Size factor (screens come in different sizes). */
+    val scale: Float = 1f,
+    /** Distance factor (screens sit at different distances from the viewer). */
+    val distance: Float = 1f,
+)
+
+private fun sizeFactor(i: Int): Float = 0.78f + ((i * 53) % 7) * 0.075f
+private fun distanceFactor(i: Int): Float = 0.85f + ((i * 31) % 5) * 0.09f
 
 fun layoutSlots(count: Int): List<Slot> {
     if (count <= 0) return emptyList()
@@ -58,7 +28,8 @@ fun layoutSlots(count: Int): List<Slot> {
     val rest = count - mid
     val top = (rest + 1) / 2
     val bottom = rest - top
-    fun ring(n: Int, row: Int, start: Int, offset: Float) = (0 until n).map { Slot(start + it, row, offset + it * 360f / n) }
+    fun ring(n: Int, row: Int, start: Int, offset: Float) =
+        (0 until n).map { Slot(start + it, row, offset + it * 360f / n, sizeFactor(start + it), distanceFactor(start + it)) }
     return ring(mid, 0, 0, 0f) + ring(top, -1, mid, 20f) + ring(bottom, 1, mid + top, 40f)
 }
 
