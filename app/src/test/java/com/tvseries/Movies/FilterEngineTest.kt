@@ -265,6 +265,53 @@ class FilterEngineTest {
         assertEquals(setOf(-1, 0, 1), rows) // above, around and below the viewer
         assertEquals(-170f, com.tvseries.Movies.core.wrapDegrees(190f), 1e-4f)
         assertEquals(170f, com.tvseries.Movies.core.wrapDegrees(-190f), 1e-4f)
-        assertEquals(11, com.tvseries.Movies.core.Eras.starts.size)
+        // screens differ in size and distance
+        val slots = com.tvseries.Movies.core.layoutSlots(18)
+        assertTrue(slots.map { it.scale }.toSet().size > 3)
+        assertTrue(slots.map { it.distance }.toSet().size > 3)
+    }
+
+    @Test fun timeWorldsAreWellFormed() {
+        val w = com.tvseries.Movies.core.TimeWorlds.all
+        assertTrue(w.size >= 10)
+        assertEquals(w.size, w.map { it.id }.toSet().size)
+        // every station has a real data source (keywords, genre or years) - nothing is hard-coded
+        assertTrue(w.all { it.keywords.isNotEmpty() || it.genres.isNotEmpty() || it.yearFrom != null })
+        assertEquals(com.tvseries.Movies.core.Env.values().toSet(), w.map { it.env }.toSet()) // each scenery is used
+    }
+
+    @Test fun workSceneMapsGenresToOriginalSceneries() {
+        val ws = com.tvseries.Movies.core.WorkScene
+        assertEquals(com.tvseries.Movies.core.Env.ASH, ws.envFor(listOf(27, 53)))
+        assertEquals(com.tvseries.Movies.core.Env.CYBER, ws.envFor(listOf(878, 80)))
+        assertEquals(com.tvseries.Movies.core.Env.FUTURE, ws.envFor(listOf(878)))
+        assertEquals(com.tvseries.Movies.core.Env.WEST, ws.envFor(listOf(37, 18)))
+        assertEquals(com.tvseries.Movies.core.Env.DESERT, ws.envFor(listOf(35)))
+        assertEquals(com.tvseries.Movies.core.Env.FILM, ws.envFor(emptyList()))
+        com.tvseries.Movies.core.Env.values().forEach { assertTrue(ws.colorsFor(it).first != 0L) }
+    }
+
+    @Test fun clockPulseKeepsTheStationAndFrozenDwellDoesNotRun() {
+        val c = com.tvseries.Movies.core.JourneyClock(5, dwellMs = 1000, warpMs = 400)
+        c.pulse()
+        var changed = false
+        repeat(25) { if (c.tick(10)) changed = true }
+        assertTrue(changed)
+        assertEquals(0, c.index)
+        repeat(30) { c.tick(10) }
+        c.frozen = true
+        val left = c.dwellLeft
+        repeat(500) { c.tick(10) }
+        assertEquals(left, c.dwellLeft)
+        assertEquals(0, c.index)
+    }
+
+    @Test fun orbitsGoFasterNearTheHole() {
+        val ids = 0 until 14
+        val inner = ids.minByOrNull { com.tvseries.Movies.ui.orbitR(it) }!!
+        val outer = ids.maxByOrNull { com.tvseries.Movies.ui.orbitR(it) }!!
+        fun speed(i: Int) = com.tvseries.Movies.ui.orbitAngle(i, 1f) - com.tvseries.Movies.ui.orbitAngle(i, 0f)
+        assertTrue(speed(inner) > speed(outer))
+        assertTrue(ids.all { com.tvseries.Movies.ui.orbitR(it) in 0.30f..0.62f })
     }
 }

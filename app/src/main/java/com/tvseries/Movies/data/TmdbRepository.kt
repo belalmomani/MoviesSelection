@@ -47,6 +47,10 @@ class TmdbRepository(private val client: TmdbClient, private val prefs: Prefs) {
         return d
     }
 
+    /** Official keyword search: resolves a phrase like "dinosaur" to TMDB keyword ids (never guessed). */
+    suspend fun searchKeywords(query: String): List<KeywordDto> =
+        client.get("search/keyword", mapOf("query" to query, "page" to "1"), KeywordSearchDto.serializer()).results
+
     /** Trailers are listed in English: far more titles have one than in Arabic. */
     suspend fun videos(media: String, id: Int): List<VideoDto> =
         client.get("$media/$id/videos", mapOf("language" to "en-US"), VideosDto.serializer()).results

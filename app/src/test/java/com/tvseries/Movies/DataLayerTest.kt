@@ -180,6 +180,15 @@ class DataLayerTest {
         s.shutdown()
     }
 
+    @Test fun discoverQueryCarriesResolvedKeywordIds() {
+        val q = DiscoverQuery(keywords = setOf(5, 3), genres = setOf(37), yearFrom = 1930, yearTo = 1959)
+        val p = q.params("movie", 1, "ar")
+        assertEquals("3|5", p["with_keywords"])
+        assertEquals("37", p["with_genres"])
+        assertEquals("1930-01-01", p["primary_release_date.gte"])
+        assertFalse(DiscoverQuery().params("tv", 1, "ar").containsKey("with_keywords"))
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

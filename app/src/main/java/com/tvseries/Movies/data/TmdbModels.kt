@@ -173,6 +173,9 @@ data class DetailsDto(
 )
 
 @Serializable
+data class KeywordSearchDto(val results: List<KeywordDto> = emptyList())
+
+@Serializable
 data class VideoDto(
     val key: String = "",
     val site: String = "",
