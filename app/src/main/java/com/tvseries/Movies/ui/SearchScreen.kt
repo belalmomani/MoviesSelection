@@ -78,6 +78,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Re-runs the current query (the all / movies / series choice changed). */
+    fun rerun() {
+        viewModelScope.launch { run(_query.value.trim()) }
+    }
+
+    val contentType = c.prefs.contentType
+
     fun setQuery(q: String) {
         _query.value = q
     }
@@ -92,11 +99,17 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
         _results.value = Load.Loading
         _results.value = try {
-            val items = c.repo.search(q).results
-            val works = items.filter { it.mediaType == "movie" || it.mediaType == "tv" }.mapNotNull { it.toCard("movie") }
-            val people = items.filter { it.mediaType == "person" }
-                .map { PersonHit(it.id, it.name ?: "", it.profilePath, it.knownForDepartment) }
-            Load.Ok(SearchResults(works, people))
+            val type = c.prefs.contentType.value
+            if (type == "all") {
+                val items = c.repo.search(q).results
+                val works = items.filter { it.mediaType == "movie" || it.mediaType == "tv" }.mapNotNull { it.toCard("movie") }
+                val people = items.filter { it.mediaType == "person" }
+                    .map { PersonHit(it.id, it.name ?: "", it.profilePath, it.knownForDepartment) }
+                Load.Ok(SearchResults(works, people))
+            } else {
+                // one type only: search that catalogue directly (more results of that type, no people)
+                Load.Ok(SearchResults(c.repo.searchType(type, q).results.mapNotNull { it.toCard(type) }, emptyList()))
+            }
         } catch (e: TmdbError) {
             Load.Fail(e)
         }
@@ -109,6 +122,8 @@ fun SearchScreen(onOpen: (WorkCard) -> Unit, onPerson: (Int) -> Unit, vm: Search
     val results by vm.results.collectAsState()
     val history by vm.prefs.history.collectAsState()
     val historyOn by vm.prefs.historyEnabled.collectAsState()
+    val contentType by vm.contentType.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(contentType) { vm.rerun() }
 
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(

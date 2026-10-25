@@ -82,6 +82,9 @@ class Prefs(private val store: KeyValueStore) {
     private val _hideWatched = MutableStateFlow(store.getString(K_HIDE_WATCHED) != "false")
     val hideWatched: StateFlow<Boolean> = _hideWatched.asStateFlow()
 
+    private val _contentType = MutableStateFlow(store.getString(K_CONTENT) ?: "all")
+    val contentType: StateFlow<String> = _contentType.asStateFlow()
+
     private val _updateToken = MutableStateFlow(store.getString(K_UPDATE_TOKEN) ?: "")
     val updateToken: StateFlow<String> = _updateToken.asStateFlow()
 
@@ -117,6 +120,8 @@ class Prefs(private val store: KeyValueStore) {
         _watched.value = if (key in _watched.value) _watched.value - key else _watched.value + key
         store.putString(K_WATCHED, json.encodeToString(stringsSer, _watched.value.toList()))
     }
+
+    fun setContentType(v: String) { _contentType.value = v; store.putString(K_CONTENT, v) }
 
     fun setUpdateToken(v: String) { _updateToken.value = v.trim(); store.putString(K_UPDATE_TOKEN, v.trim()) }
 
@@ -214,6 +219,7 @@ class Prefs(private val store: KeyValueStore) {
         const val K_FAV = "favorites"
         const val K_WATCH = "watchlist"
         const val K_SELECTION = "last_selection"
+        const val K_CONTENT = "content_type"
         const val K_UPDATE_TOKEN = "update_token"
         const val K_INTENT = "user_intent"
         const val K_TASTE = "taste_profile"
@@ -222,4 +228,12 @@ class Prefs(private val store: KeyValueStore) {
         const val K_WATCHED = "watched"
         const val K_HIDE_WATCHED = "hide_watched"
     }
+}
+
+/** Global "all / movies / series" choice. [typeOrKey] is "movie", "tv", "movie:123" or "tv:5". */
+object ContentType {
+    const val ALL = "all"
+    const val MOVIE = "movie"
+    const val TV = "tv"
+    fun allows(type: String, typeOrKey: String): Boolean = type == ALL || typeOrKey.startsWith(type)
 }

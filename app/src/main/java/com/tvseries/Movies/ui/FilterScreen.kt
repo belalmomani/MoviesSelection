@@ -91,10 +91,12 @@ fun FilterScreen(
     val notice by vm.notice.collectAsState()
     val arabic = isArabic()
 
+    val contentType by vm.contentType.collectAsState()
     LaunchedEffect(Unit) {
         vm.consumePreset()
         vm.refresh()
     }
+    LaunchedEffect(contentType) { vm.onTypeChanged() }
     val savedFilters by vm.savedFilters.collectAsState()
     var showSave by remember { mutableStateOf(false) }
     var showSaved by remember { mutableStateOf(false) }

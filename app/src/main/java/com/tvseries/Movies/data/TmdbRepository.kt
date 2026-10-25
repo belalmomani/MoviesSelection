@@ -33,6 +33,19 @@ class TmdbRepository(private val client: TmdbClient, private val prefs: Prefs) {
             PageDto.serializer(),
         )
 
+    /** Search inside one type only (media = "movie" or "tv"): more results of that type than the mixed search. */
+    suspend fun searchType(media: String, query: String, page: Int = 1): PageDto =
+        client.get(
+            "search/$media",
+            mapOf(
+                "query" to query,
+                "language" to uiLang,
+                "page" to page.toString(),
+                "include_adult" to prefs.showAdult.value.toString(),
+            ),
+            PageDto.serializer(),
+        )
+
     suspend fun details(media: String, id: Int): DetailsDto {
         val key = "$media:$id:$uiLang"
         cacheLock.withLock { detailsCache[key] }?.let { return it }

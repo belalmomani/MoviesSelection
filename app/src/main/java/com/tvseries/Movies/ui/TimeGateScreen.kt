@@ -81,10 +81,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tvseries.Movies.MoviesApp
 import com.tvseries.Movies.core.JourneyClock
-<<<<<<< HEAD
 import com.tvseries.Movies.core.Slot
-=======
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
 import com.tvseries.Movies.core.TimeWorld
 import com.tvseries.Movies.core.TimeWorlds
 import com.tvseries.Movies.core.layoutSlots
@@ -146,7 +143,6 @@ class TimeGateState(val clock: JourneyClock) {
     var slotCount by mutableIntStateOf(0)
     var frontSlot by mutableIntStateOf(0)
     var lastSwapAt by mutableLongStateOf(0L)
-<<<<<<< HEAD
 
     // Black hole ("time hole"): orbiting screens, time dilation, compressed worlds.
     var hole by mutableStateOf(false)
@@ -163,17 +159,25 @@ class TimeGateState(val clock: JourneyClock) {
     var swallowCard by mutableStateOf<WorkCard?>(null)
     var swallowMs by mutableLongStateOf(0L)
     var swallowDetails by mutableStateOf<DetailsDto?>(null)
-=======
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
 }
 
 class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
     private val c = (app as MoviesApp).container
     val state = TimeGateState(JourneyClock(TimeWorlds.all.size))
     private val keywordCache = HashMap<String, List<Int>>()
+    private var loadedType: String = c.prefs.contentType.value
 
     /** Loads the station and its neighbours so the next jump already has screens to show. */
     fun ensure(i: Int) {
+        val type = c.prefs.contentType.value
+        if (type != loadedType) {
+            // the all / movies / series choice changed: stations must be fetched again for the new type
+            loadedType = type
+            state.stations.clear()
+            state.trailers.clear()
+            state.trailerCodes.clear()
+            state.activeKey = null
+        }
         val n = TimeWorlds.all.size
         for (k in listOf(i, (i + 1) % n, (i - 1 + n) % n)) load(k, false)
     }
@@ -222,9 +226,12 @@ class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
             minVotes = w.minVotes, sort = "vote_count.desc", keywords = ids,
             genres = w.genres, yearFrom = w.yearFrom, yearTo = w.yearTo,
         )
-        val movies = (c.repo.discover("movie", 1, q).results + c.repo.discover("movie", 2, q).results)
-            .mapNotNull { it.toCard("movie") }.filter { it.posterPath != null }.take(22)
-        val shows = c.repo.discover("tv", 1, q).results.mapNotNull { it.toCard("tv") }.filter { it.posterPath != null }.take(10)
+        val type = c.prefs.contentType.value
+        val movies = if (type == "tv") emptyList() else (c.repo.discover("movie", 1, q).results + c.repo.discover("movie", 2, q).results)
+            .mapNotNull { it.toCard("movie") }.filter { it.posterPath != null }.take(if (type == "movie") 30 else 22)
+        val shows = if (type == "movie") emptyList() else (
+            if (type == "tv") c.repo.discover("tv", 1, q).results + c.repo.discover("tv", 2, q).results else c.repo.discover("tv", 1, q).results
+            ).mapNotNull { it.toCard("tv") }.filter { it.posterPath != null }.take(if (type == "tv") 30 else 10)
         val mixed = ArrayList<WorkCard>()
         for (k in 0 until maxOf(movies.size, shows.size)) {
             movies.getOrNull(k)?.let { mixed += it }
@@ -279,7 +286,6 @@ class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
         state.clock.jumpTo(pick)
     }
 
-<<<<<<< HEAD
     /** Enter from the HUD: a short warp, and the hole opens at its midpoint. */
     fun enterHole() {
         if (state.hole || state.holeEnter) return
@@ -337,8 +343,6 @@ class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
         if (c.prefs.watchlist.value.none { it.key == card.key }) c.prefs.toggleWatchlist(card)
     }
 
-=======
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
     /** Swaps one non-front screen to the next unseen title of the station. */
     fun rotateOneTitle() {
         val pool = (state.stations[state.index] as? Load.Ok)?.value ?: return
@@ -375,20 +379,16 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                 if (st.introMs >= 7000L) st.introDone = true
                 continue
             }
-<<<<<<< HEAD
             if (st.swallowCard != null) {
                 st.swallowMs = min(st.swallowMs + dt, 4000L)
                 continue
             }
             st.clock.frozen = st.hole
-=======
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
             val changed = st.clock.tick(dt)
             st.warp = st.clock.warpFraction
             if (changed) {
                 st.index = st.clock.index
                 vm.ensure(st.index)
-<<<<<<< HEAD
                 if (st.holeExit) {
                     st.hole = false
                     st.holeExit = false
@@ -396,15 +396,12 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                 } else if (st.holeEnter || (!st.hole && st.advancing && !st.manual && st.timeMs - st.lastHoleEnd > 120000L && Random.nextFloat() < 0.25f)) {
                     vm.beginHole() // entering at the middle of the warp, while the screens are faded out
                 }
-=======
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
                 if (st.pendingYawJump) {
                     st.yaw = (st.yaw + 90f + Random.nextFloat() * 180f) % 360f
                     st.pendingYawJump = false
                 }
             }
 
-<<<<<<< HEAD
             if (st.hole) {
                 st.holeDilation = 1f + 0.8f * sin(st.timeMs / 2000f)
                 st.holeTau += dt / 1000f * st.holeDilation * st.speed
@@ -435,37 +432,11 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                     }
                 }
             } else if (!st.manual && !st.hole) {
-=======
-            // Camera: glide to a requested target, otherwise drift automatically (unless in manual mode).
-            val yt = st.yawTarget
-            val pt = st.pitchTarget
-            if (yt != null || pt != null) {
-                if (yt != null) {
-                    val d = wrapDegrees(yt - st.yaw)
-                    if (abs(d) < 1f) {
-                        st.yaw = yt
-                        st.yawTarget = null
-                    } else {
-                        st.yaw = (st.yaw + d * min(1f, dt / 260f) + 360f) % 360f
-                    }
-                }
-                if (pt != null) {
-                    val d = pt - st.pitch
-                    if (abs(d) < 0.02f) {
-                        st.pitch = pt
-                        st.pitchTarget = null
-                    } else {
-                        st.pitch += d * min(1f, dt / 260f)
-                    }
-                }
-            } else if (!st.manual) {
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
                 st.yaw = (st.yaw + 9f * st.speed * dt / 1000f) % 360f
                 st.pitch = 0.35f * sin(st.timeMs / 4200f)
             }
 
             // Attention screen: highlights one screen for ~4.5s every ~22s. Never opens anything by itself.
-<<<<<<< HEAD
             if (st.hole) {
                 st.spotSlot = -1
                 st.spotEnv = 0f
@@ -490,29 +461,6 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
 
             // Titles rotate while the journey runs.
             if (!st.hole && st.advancing && st.timeMs - st.lastSwapAt > 4200L) {
-=======
-            if (st.spotSlot < 0) {
-                if (st.timeMs >= st.nextSpotAt && st.slotCount > 3) {
-                    val choices = (0 until st.slotCount).filter { it != st.frontSlot }
-                    if (choices.isNotEmpty()) {
-                        st.spotSlot = choices.random()
-                        st.spotStart = st.timeMs
-                    }
-                }
-            } else {
-                val p = (st.timeMs - st.spotStart) / 4500f
-                if (p >= 1f) {
-                    st.spotSlot = -1
-                    st.spotEnv = 0f
-                    st.nextSpotAt = st.timeMs + 22000L
-                } else {
-                    st.spotEnv = sin(PI.toFloat() * p)
-                }
-            }
-
-            // Titles rotate while the journey runs.
-            if (st.advancing && st.timeMs - st.lastSwapAt > 4200L) {
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
                 st.lastSwapAt = st.timeMs
                 vm.rotateOneTitle()
             }
@@ -524,27 +472,16 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
     val c2 by animateColorAsState(Color(world.colors.second), tween(1200), label = "c2")
     val data = st.stations[st.index]
     val list = (data as? Load.Ok)?.value.orEmpty()
-<<<<<<< HEAD
     val displayList = if (st.hole) st.holePool else list
     val slotN = min(if (st.hole) 14 else 18, displayList.size)
     val slots = remember(slotN, st.hole) {
         if (st.hole) (0 until slotN).map { Slot(it, 0, 0f) } else layoutSlots(slotN)
     }
-=======
-    val slotN = min(18, list.size)
-    val slots = remember(slotN) { layoutSlots(slotN) }
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
     val bucket by remember { derivedStateOf { (st.yaw / 6f).toInt() } }
-<<<<<<< HEAD
     val tauBucket by remember { derivedStateOf { (st.holeTau * 2f).toInt() } }
 
     SideEffect { st.slotCount = slotN }
     LaunchedEffect(st.index, slotN, st.hole) {
-=======
-
-    SideEffect { st.slotCount = slotN }
-    LaunchedEffect(st.index, slotN) {
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
         st.shown.clear()
         st.shown.addAll(0 until slotN)
     }
@@ -555,11 +492,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
     }
     SideEffect { st.frontSlot = frontSlot }
     val frontKey by remember(slots, list) {
-<<<<<<< HEAD
         derivedStateOf { if (st.hole) null else list.getOrNull(st.shown.getOrNull(frontSlot) ?: frontSlot)?.key }
-=======
-        derivedStateOf { list.getOrNull(st.shown.getOrNull(frontSlot) ?: frontSlot)?.key }
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
     }
     LaunchedEffect(frontKey) {
         val k = frontKey
@@ -571,11 +504,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
     }
     // Stations with no titles at all are skipped while travelling automatically.
     LaunchedEffect(st.index, data) {
-<<<<<<< HEAD
         if (st.introDone && !st.hole && data is Load.Ok && data.value.isEmpty() && st.advancing) {
-=======
-        if (st.introDone && data is Load.Ok && data.value.isEmpty() && st.advancing) {
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
             delay(2200)
             vm.step(1)
         }
@@ -596,11 +525,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
         Canvas(Modifier.fillMaxSize()) {
             drawRect(Brush.verticalGradient(listOf(c1, c2)))
             val t = st.timeMs / 1000f
-<<<<<<< HEAD
             if (st.hole) drawBlackHole(t, st.holeDilation) else drawEnvironment(world.env, t)
-=======
-            drawEnvironment(world.env, t)
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
             val hump = sin(PI.toFloat() * st.warp)
             val cx = size.width / 2f
             val cy = size.height / 2f
@@ -642,7 +567,6 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
             }
             ordered.forEach { slot ->
                 key(slot.index) {
-<<<<<<< HEAD
                     val ci = if (st.hole) slot.index else (st.shown.getOrNull(slot.index) ?: slot.index)
                     val card = displayList.getOrNull(ci)
                     if (card != null) {
@@ -687,34 +611,6 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                                 .clip(shape)
                                 .border(2.dp, Color.White.copy(alpha = 0.35f), shape)
                                 .clickable { vm.swallow(card) },
-=======
-                    val ci = st.shown.getOrNull(slot.index) ?: slot.index
-                    val card = list.getOrNull(ci)
-                    if (card != null) {
-                        Box(
-                            Modifier.align(Alignment.Center).size(screenW * slot.scale, screenH * slot.scale)
-                                .graphicsLayer {
-                                    val d = wrapDegrees(slot.angle - st.yaw)
-                                    val rad = Math.toRadians(d.toDouble())
-                                    val z = cos(rad).toFloat()
-                                    val near = (z + 1f) / 2f
-                                    val fade = abs(2f * st.warp - 1f)
-                                    val spot = if (st.spotSlot == slot.index) st.spotEnv else 0f
-                                    val shift = (slot.row - st.pitch) * rowPx
-                                    translationX = sin(rad).toFloat() * radiusPx * slot.distance
-                                    translationY = shift
-                                    val s = (0.5f + 0.5f * near) * (1f + 0.3f * spot)
-                                    scaleX = s
-                                    scaleY = s
-                                    alpha = min(1f, (0.25f + 0.75f * near + 0.4f * spot) * fade)
-                                    rotationY = (-d).coerceIn(-70f, 70f)
-                                    rotationX = shift / rowPx * -12f
-                                    cameraDistance = 14f * this.density
-                                }
-                                .clip(shape)
-                                .border(2.dp, Color.White.copy(alpha = 0.35f), shape)
-                                .clickable { onOpen(card) },
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
                         ) {
                             Crossfade(targetState = card, label = "screen") { c ->
                                 ScreenFace(
@@ -773,16 +669,12 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-<<<<<<< HEAD
                     val dilationTenths by remember { derivedStateOf { (st.holeDilation * 10f).toInt() } }
                     Text(
                         if (st.hole) tr("ثقب الزمن · تمدد الزمن ×", "Time hole · dilation ×") + (dilationTenths / 10f).toString()
                         else world.name(arabic) + "  ·  " + world.sub(arabic),
                         color = Color.White, style = MaterialTheme.typography.titleSmall,
                     )
-=======
-                    Text(world.name(arabic) + "  ·  " + world.sub(arabic), color = Color.White, style = MaterialTheme.typography.titleSmall)
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
                     val s = data
                     Text(
                         when {
@@ -811,29 +703,11 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                     AssistChip(onClick = { st.radar = !st.radar }, label = { Text("📡 " + tr("الرادار", "Radar"), color = Color.White) })
                 }
                 item {
-<<<<<<< HEAD
-=======
-                    AssistChip(onClick = { vm.randomJump() }, label = { Text("⚡ " + tr("قفزة زمنية", "Time leap"), color = Color.White) })
-                }
-                if (st.spotSlot >= 0) item {
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
                     AssistChip(
-<<<<<<< HEAD
                         onClick = { if (st.hole) vm.exitHole() else vm.enterHole() },
                         label = { Text("🕳️ " + (if (st.hole) tr("اخرج من الثقب", "Leave the hole") else tr("ثقب الزمن", "Time hole")), color = Color.White) },
-=======
-                        onClick = {
-                            val sl = layoutSlots(st.slotCount).firstOrNull { it.index == st.spotSlot }
-                            if (sl != null) {
-                                st.yawTarget = sl.angle
-                                st.pitchTarget = sl.row.toFloat()
-                            }
-                        },
-                        label = { Text("✨ " + tr("اقترب من الشاشة المميزة", "Approach the highlighted screen"), color = Color(0xFFFFD54F)) },
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
                     )
                 }
-<<<<<<< HEAD
                 item {
                     AssistChip(onClick = { vm.randomJump() }, label = { Text("⚡ " + tr("قفزة زمنية", "Time leap"), color = Color.White) })
                 }
@@ -849,8 +723,6 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                         label = { Text("✨ " + tr("اقترب من الشاشة المميزة", "Approach the highlighted screen"), color = Color(0xFFFFD54F)) },
                     )
                 }
-=======
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
                 listOf(0.5f, 1f, 1.5f, 2f, 3f).forEach { sp ->
                     item {
                         AssistChip(
@@ -889,7 +761,6 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
             }
         }
 
-<<<<<<< HEAD
         val sc = st.swallowCard
         if (sc != null) {
             SwallowOverlay(
@@ -900,8 +771,6 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
             )
         }
 
-=======
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
         if (!st.introDone) {
             val posters = st.stations.values.flatMap { s -> if (s is Load.Ok) s.value else emptyList() }.take(8)
             TimeGateIntro(st, arabic, posters, onSkip = { st.introMs = 7000L })

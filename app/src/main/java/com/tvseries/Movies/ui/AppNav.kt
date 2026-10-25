@@ -13,6 +13,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -95,11 +96,19 @@ private val moreItems = listOf(
 /** Top bar: four quick-start experiences, plus "More" for the extra pages. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TopActionBar(onGo: (String) -> Unit) {
+private fun TopActionBar(type: String, onType: (String) -> Unit, onGo: (String) -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-            Text("Movies Selection", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 12.dp))
+            Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Movies Selection", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                listOf("all" to tr("الكل", "All"), "movie" to tr("أفلام", "Movies"), "tv" to tr("مسلسلات", "Series")).forEach { (v, label) ->
+                    FilterChip(
+                        selected = type == v, onClick = { onType(v) }, label = { Text(label) },
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+            }
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(topItems, key = { it.route }) { t ->
                     AssistChip(onClick = { onGo(t.route) }, label = { Text(tr(t.ar, t.en)) })
@@ -139,6 +148,7 @@ private fun NavHostController.goTab(route: String) {
 @Composable
 fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
     val update by container.updateAvailable.collectAsState()
+    val contentType by container.prefs.contentType.collectAsState()
     androidx.compose.runtime.LaunchedEffect(Unit) { container.checkUpdateQuietly() }
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
@@ -158,7 +168,9 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
 
     Scaffold(
         topBar = {
-            if (current in tabs.map { it.route }) TopActionBar(onGo = { nav.navigate(it) })
+            if (current in tabs.map { it.route }) {
+                TopActionBar(type = contentType, onType = { container.prefs.setContentType(it) }, onGo = { nav.navigate(it) })
+            }
         },
         bottomBar = {
             if (current in tabs.map { it.route }) {

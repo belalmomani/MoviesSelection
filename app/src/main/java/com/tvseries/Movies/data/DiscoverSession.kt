@@ -40,7 +40,10 @@ class DiscoverSession(private val repo: TmdbRepository, private val prefs: Prefs
     /** Works not yet watched (when the user keeps "hide watched" on). */
     fun visibleWorks(): List<Work> {
         val watched = prefs.watched.value
-        return if (prefs.hideWatched.value && watched.isNotEmpty()) cache.works.filter { it.key !in watched } else cache.works
+        val type = prefs.contentType.value
+        return cache.works.filter { w ->
+            ContentType.allows(type, w.key) && !(prefs.hideWatched.value && w.key in watched)
+        }
     }
 
     suspend fun ensureLoaded(more: Boolean = false) {

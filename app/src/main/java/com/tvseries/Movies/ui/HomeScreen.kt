@@ -44,6 +44,7 @@ import com.tvseries.Movies.ads.AdsProvider
 import androidx.compose.foundation.layout.fillMaxSize
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.GemFinder
+import com.tvseries.Movies.data.ContentType
 import com.tvseries.Movies.data.ListItemDto
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.TmdbError
@@ -95,11 +96,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val savedFilters = c.prefs.savedFilters
+    val contentType = c.prefs.contentType
+    private var gemsType: String? = null
 
     private val _gems = MutableStateFlow<Load<List<WorkCard>>>(Load.Loading)
     val gems: StateFlow<Load<List<WorkCard>>> = _gems.asStateFlow()
 
-    fun loadGems() {
+    fun loadGems(force: Boolean = false) {
+        val t = c.prefs.contentType.value
+        if (!force && gemsType == t && _gems.value !is Load.Fail) return
+        gemsType = t
         viewModelScope.launch {
             _gems.value = Load.Loading
             _gems.value = try {
@@ -114,7 +120,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun fetchGems(): List<WorkCard> {
         val q = c.repo.baseQuery().copy(minVotes = 1500, maxVotes = 20000, minRating = 7, sort = "vote_average.desc")
         val items = ArrayList<Pair<String, ListItemDto>>()
-        for (media in listOf("movie", "tv")) for (page in 1..2) c.repo.discover(media, page, q).results.forEach { items += media to it }
+        val medias = if (c.prefs.contentType.value == "all") listOf("movie", "tv") else listOf(c.prefs.contentType.value)
+        for (media in medias) for (page in 1..2) c.repo.discover(media, page, q).results.forEach { items += media to it }
         val watched = c.prefs.watched.value
         return items
             .filter { (_, d) -> GemFinder.isGem(d.voteAverage ?: 0.0, d.voteCount ?: 0) }
@@ -148,6 +155,8 @@ fun HomeScreen(
     vm: HomeViewModel = viewModel(),
 ) {
     val saved = remember { vm.savedConditionCount() }
+    val type by vm.contentType.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(type) { vm.loadGems() }
     val savedFilters by vm.savedFilters.collectAsState()
     val typePresets = listOf(
         Triple("أفلام", "Movies", preset(Axes.FORMAT, "format.movie")),
@@ -234,13 +243,13 @@ fun HomeScreen(
             )
             when (val g = gems) {
                 is Load.Loading -> CenterLoading()
-                is Load.Fail -> ErrorBox(g.error, onRetry = { vm.loadGems() })
+                is Load.Fail -> ErrorBox(g.error, onRetry = { vm.loadGems(true) })
                 is Load.Ok -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(g.value, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
                 }
             }
         }
-        items(vm.sections, key = { it.id }) { s ->
+        items(vm.sections.filter { s -> type == "all" || (s.path.startsWith("movie") && type == "movie") || (s.path.startsWith("tv") && type == "tv") || s.path.startsWith("trending") }, key = { it.id }) { s ->
             val state by vm.flow(s.id).collectAsState()
             SectionTitle(tr(s.titleAr, s.titleEn))
             when (val st = state) {
@@ -250,7 +259,7 @@ fun HomeScreen(
                     contentPadding = PaddingValues(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(st.value, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
+                    items(st.value.filter { ContentType.allows(type, it.key) }, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
                 }
             }
         }

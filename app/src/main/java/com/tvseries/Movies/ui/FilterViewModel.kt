@@ -13,6 +13,7 @@ import com.tvseries.Movies.core.FilterResult
 import com.tvseries.Movies.core.FilterState
 import com.tvseries.Movies.core.Outcome
 import com.tvseries.Movies.core.Selection
+import com.tvseries.Movies.data.ContentType
 import com.tvseries.Movies.data.PoolSnapshot
 import com.tvseries.Movies.data.ServerRefine
 import com.tvseries.Movies.data.TmdbError
@@ -44,6 +45,7 @@ data class FilterUi(
 class FilterViewModel(app: Application) : AndroidViewModel(app) {
     private val c = (app as MoviesApp).container
     private val pool = WorkPool()
+    val contentType = c.prefs.contentType
     private var snapshot: PoolSnapshot = pool.snapshot()
 
     private val _state = MutableStateFlow(FilterState(c.prefs.loadSelection()))
@@ -78,6 +80,9 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         persistAndRefresh()
         loadMore(refine = true)
     }
+
+    /** The global all / movies / series choice changed. */
+    fun onTypeChanged() = persistAndRefresh()
 
     /** Re-evaluates (e.g. after marking a title as watched elsewhere). */
     fun refresh() = recompute()
@@ -164,11 +169,13 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         val f = sel.include[Axes.FORMAT].orEmpty()
         val movie = f.any { it == "format.movie" || it == "format.tv_movie" || it == "format.short" }
         val tv = f.any { it == "format.tv" || it == "format.miniseries" }
-        return when {
+        val base = when {
             movie && !tv -> listOf("movie")
             tv && !movie -> listOf("tv")
             else -> listOf("movie", "tv")
         }
+        val type = c.prefs.contentType.value
+        return if (type == ContentType.ALL) base else base.filter { it == type }.ifEmpty { listOf(type) }
     }
 
     private fun isMappable(sel: Selection): Boolean =
@@ -289,12 +296,13 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         val snap = snapshot
         val sel = _state.value.selection
         val base = c.repo.baseQuery().signature()
+        val type = c.prefs.contentType.value
         val hide = c.prefs.hideWatched.value
         val watchedKeys = c.prefs.watched.value
         val complete = mediaTypes(sel).all { !pool.stream(it, base).hasMore }
         recomputeJob = viewModelScope.launch {
             val built = withContext(Dispatchers.Default) {
-                val visible = if (hide && watchedKeys.isNotEmpty()) snap.works.filter { it.key !in watchedKeys } else snap.works
+                val visible = snap.works.filter { ContentType.allows(type, it.key) && !(hide && it.key in watchedKeys) }
                 val engine = FilterEngine(visible, snap.taxonomy, complete)
                 val result = engine.evaluate(sel)
                 val views = snap.taxonomy.axes

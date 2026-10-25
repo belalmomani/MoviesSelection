@@ -113,7 +113,8 @@ class PartyViewModel(app: Application) : AndroidViewModel(app) {
     private fun match(a: Selection, b: Selection): Pair<PartyUi.Done, PartyMatcher.Result> {
         val snap = pool.snapshot()
         val watched = c.prefs.watched.value
-        val works = snap.works.filter { it.key !in watched }
+        val type = c.prefs.contentType.value
+        val works = snap.works.filter { it.key !in watched && com.tvseries.Movies.data.ContentType.allows(type, it.key) }
         val r = PartyMatcher.intersect(works, a, b)
         val done = PartyUi.Done(
             r.confirmed.mapNotNull { snap.cards[it.key] },

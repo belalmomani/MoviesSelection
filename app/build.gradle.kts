@@ -26,11 +26,7 @@ android {
         // Every CI build gets a higher versionCode (run number) so it installs OVER the previous one.
         val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionCode = 100 + buildNumber
-<<<<<<< HEAD
-        versionName = "1.8.0.$buildNumber"
-=======
-        versionName = "1.7.0.$buildNumber"
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
+        versionName = "1.8.1.$buildNumber"
         buildConfigField("int", "BUILD_NUMBER", buildNumber.toString())
 
         // The TMDB key is NEVER stored in the repository. It is read from a Gradle property

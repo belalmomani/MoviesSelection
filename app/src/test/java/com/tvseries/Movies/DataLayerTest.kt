@@ -189,6 +189,17 @@ class DataLayerTest {
         assertFalse(DiscoverQuery().params("tv", 1, "ar").containsKey("with_keywords"))
     }
 
+    @Test fun contentTypeKeepsOnlyTheChosenKind() {
+        val ct = com.tvseries.Movies.data.ContentType
+        assertTrue(ct.allows("all", "movie:1") && ct.allows("all", "tv:2"))
+        assertTrue(ct.allows("tv", "tv:2") && !ct.allows("tv", "movie:1"))
+        assertTrue(ct.allows("movie", "movie") && !ct.allows("movie", "tv"))
+        val p = Prefs(MemoryStore())
+        assertEquals("all", p.contentType.value)
+        p.setContentType("tv")
+        assertEquals("tv", p.contentType.value)
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

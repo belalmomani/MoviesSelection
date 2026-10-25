@@ -278,7 +278,6 @@ class FilterEngineTest {
         // every station has a real data source (keywords, genre or years) - nothing is hard-coded
         assertTrue(w.all { it.keywords.isNotEmpty() || it.genres.isNotEmpty() || it.yearFrom != null })
         assertEquals(com.tvseries.Movies.core.Env.values().toSet(), w.map { it.env }.toSet()) // each scenery is used
-<<<<<<< HEAD
     }
 
     @Test fun workSceneMapsGenresToOriginalSceneries() {
@@ -314,7 +313,5 @@ class FilterEngineTest {
         fun speed(i: Int) = com.tvseries.Movies.ui.orbitAngle(i, 1f) - com.tvseries.Movies.ui.orbitAngle(i, 0f)
         assertTrue(speed(inner) > speed(outer))
         assertTrue(ids.all { com.tvseries.Movies.ui.orbitR(it) in 0.30f..0.62f })
-=======
->>>>>>> branch 'main' of https://github.com/belalmomani/MoviesSelection.git
     }
 }
