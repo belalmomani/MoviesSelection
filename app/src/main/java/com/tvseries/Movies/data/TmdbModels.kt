@@ -169,6 +169,7 @@ data class DetailsDto(
     val credits: CreditsDto? = null,
     val keywords: KeywordsDto? = null,
     val similar: PageDto? = null,
+    val recommendations: PageDto? = null,
     @SerialName("watch/providers") val watchProviders: WatchProvidersDto? = null,
 )
 

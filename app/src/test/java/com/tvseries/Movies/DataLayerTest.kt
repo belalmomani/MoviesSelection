@@ -200,6 +200,23 @@ class DataLayerTest {
         assertEquals("tv", p.contentType.value)
     }
 
+    @Test fun timeGateSettingsDefaultsAndPersistence() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        assertFalse(p.gateLite.value)       // full experience by default
+        assertTrue(p.holeAuto.value)        // black hole may open by itself
+        assertFalse(p.skipIntro.value)
+        assertEquals(1f, p.gateSpeed.value, 1e-6f)
+        p.setGateLite(true); p.setHoleAuto(false); p.setSkipIntro(true); p.setGateSpeed(2f)
+        val again = Prefs(store)
+        assertTrue(again.gateLite.value)
+        assertFalse(again.holeAuto.value)
+        assertTrue(again.skipIntro.value)
+        assertEquals(2f, again.gateSpeed.value, 1e-6f)
+        again.clearUserData()               // erasing personal data keeps these settings
+        assertTrue(Prefs(store).gateLite.value)
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

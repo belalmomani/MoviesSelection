@@ -82,6 +82,18 @@ class Prefs(private val store: KeyValueStore) {
     private val _hideWatched = MutableStateFlow(store.getString(K_HIDE_WATCHED) != "false")
     val hideWatched: StateFlow<Boolean> = _hideWatched.asStateFlow()
 
+    private val _gateLite = MutableStateFlow(store.getString(K_GATE_LITE) == "true")
+    val gateLite: StateFlow<Boolean> = _gateLite.asStateFlow()
+
+    private val _holeAuto = MutableStateFlow(store.getString(K_HOLE_AUTO) != "false")
+    val holeAuto: StateFlow<Boolean> = _holeAuto.asStateFlow()
+
+    private val _skipIntro = MutableStateFlow(store.getString(K_SKIP_INTRO) == "true")
+    val skipIntro: StateFlow<Boolean> = _skipIntro.asStateFlow()
+
+    private val _gateSpeed = MutableStateFlow(store.getString(K_GATE_SPEED)?.toFloatOrNull() ?: 1f)
+    val gateSpeed: StateFlow<Float> = _gateSpeed.asStateFlow()
+
     private val _contentType = MutableStateFlow(store.getString(K_CONTENT) ?: "all")
     val contentType: StateFlow<String> = _contentType.asStateFlow()
 
@@ -120,6 +132,11 @@ class Prefs(private val store: KeyValueStore) {
         _watched.value = if (key in _watched.value) _watched.value - key else _watched.value + key
         store.putString(K_WATCHED, json.encodeToString(stringsSer, _watched.value.toList()))
     }
+
+    fun setGateLite(v: Boolean) { _gateLite.value = v; store.putString(K_GATE_LITE, v.toString()) }
+    fun setHoleAuto(v: Boolean) { _holeAuto.value = v; store.putString(K_HOLE_AUTO, v.toString()) }
+    fun setSkipIntro(v: Boolean) { _skipIntro.value = v; store.putString(K_SKIP_INTRO, v.toString()) }
+    fun setGateSpeed(v: Float) { _gateSpeed.value = v; store.putString(K_GATE_SPEED, v.toString()) }
 
     fun setContentType(v: String) { _contentType.value = v; store.putString(K_CONTENT, v) }
 
@@ -219,6 +236,10 @@ class Prefs(private val store: KeyValueStore) {
         const val K_FAV = "favorites"
         const val K_WATCH = "watchlist"
         const val K_SELECTION = "last_selection"
+        const val K_GATE_LITE = "gate_lite"
+        const val K_HOLE_AUTO = "hole_auto"
+        const val K_SKIP_INTRO = "skip_intro"
+        const val K_GATE_SPEED = "gate_speed"
         const val K_CONTENT = "content_type"
         const val K_UPDATE_TOKEN = "update_token"
         const val K_INTENT = "user_intent"

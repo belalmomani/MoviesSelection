@@ -112,6 +112,7 @@ fun DetailsScreen(
     ads: AdsProvider,
     container: com.tvseries.Movies.AppContainer,
     onOpenCompare: () -> Unit,
+    onWeb: (String, Int) -> Unit,
     media: String,
     id: Int,
     onBack: () -> Unit,
@@ -206,6 +207,7 @@ fun DetailsScreen(
                                 }
                                 ctx.startActivity(Intent.createChooser(send, null))
                             }) { Text(tr("مشاركة", "Share")) }
+                            OutlinedButton(onClick = { onWeb(media, id) }) { Text(tr("🕸️ استكشف الروابط", "🕸️ Explore links")) }
                             val inCompare = cmp.any { it.key == card.key }
                             OutlinedButton(onClick = { container.toggleCompare(card) }) {
                                 Text(if (inCompare) tr("✓ في المقارنة", "✓ Comparing") else tr("⚖️ قارن", "⚖️ Compare"))

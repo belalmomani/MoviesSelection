@@ -149,6 +149,7 @@ fun HomeScreen(
     onMood: () -> Unit,
     onParty: () -> Unit,
     onTimeGate: () -> Unit,
+    onWeb: () -> Unit,
     onOpen: (WorkCard) -> Unit,
     onSearch: () -> Unit,
     onFilter: (Selection?) -> Unit,
@@ -197,6 +198,9 @@ fun HomeScreen(
                 }
                 androidx.compose.material3.FilledTonalButton(onClick = onTimeGate, modifier = Modifier.fillMaxWidth()) {
                     Text(tr("🌀 بوابة الزمن السينمائية", "🌀 Cinema Time Gate"))
+                }
+                androidx.compose.material3.FilledTonalButton(onClick = onWeb, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("🕸️ شبكة العوالم السينمائية", "🕸️ Web of cinema worlds"))
                 }
                 OutlinedButton(onClick = onParty, modifier = Modifier.fillMaxWidth()) {
                     Text(tr("🎉 سهرة جماعية", "🎉 Group watch"))

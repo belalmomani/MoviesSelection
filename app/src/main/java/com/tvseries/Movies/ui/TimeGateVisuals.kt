@@ -60,7 +60,7 @@ internal fun hash(i: Int): Float {
     return (x and 0x7fffffff) / 2147483647f
 }
 
-private fun DrawScope.tri(color: Color, x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
+internal fun DrawScope.tri(color: Color, x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
     val p = Path()
     p.moveTo(x1, y1)
     p.lineTo(x2, y2)

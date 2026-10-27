@@ -50,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -163,7 +164,11 @@ class TimeGateState(val clock: JourneyClock) {
 
 class TimeGateViewModel(app: Application) : AndroidViewModel(app) {
     private val c = (app as MoviesApp).container
-    val state = TimeGateState(JourneyClock(TimeWorlds.all.size))
+    val prefs = c.prefs
+    val state = TimeGateState(JourneyClock(TimeWorlds.all.size)).also {
+        it.speed = c.prefs.gateSpeed.value
+        it.clock.speed = it.speed
+    }
     private val keywordCache = HashMap<String, List<Int>>()
     private var loadedType: String = c.prefs.contentType.value
 
@@ -366,7 +371,9 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
     }
 
     // Frame loop: the journey runs by itself; nothing needs to be pressed.
+    val lite by vm.prefs.gateLite.collectAsState()
     LaunchedEffect(Unit) {
+        if (vm.prefs.skipIntro.value || vm.prefs.gateLite.value) st.introDone = true
         vm.ensure(st.clock.index)
         var last = withFrameNanos { it }
         while (true) {
@@ -393,7 +400,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                     st.hole = false
                     st.holeExit = false
                     st.lastHoleEnd = st.timeMs
-                } else if (st.holeEnter || (!st.hole && st.advancing && !st.manual && st.timeMs - st.lastHoleEnd > 120000L && Random.nextFloat() < 0.25f)) {
+                } else if (st.holeEnter || (!st.hole && st.advancing && !st.manual && st.timeMs - st.lastHoleEnd > 120000L && vm.prefs.holeAuto.value && !vm.prefs.gateLite.value && Random.nextFloat() < 0.25f)) {
                     vm.beginHole() // entering at the middle of the warp, while the screens are faded out
                 }
                 if (st.pendingYawJump) {
@@ -473,7 +480,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
     val data = st.stations[st.index]
     val list = (data as? Load.Ok)?.value.orEmpty()
     val displayList = if (st.hole) st.holePool else list
-    val slotN = min(if (st.hole) 14 else 18, displayList.size)
+    val slotN = min(if (st.hole) (if (lite) 8 else 14) else (if (lite) 10 else 18), displayList.size)
     val slots = remember(slotN, st.hole) {
         if (st.hole) (0 until slotN).map { Slot(it, 0, 0f) } else layoutSlots(slotN)
     }
@@ -525,7 +532,7 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
         Canvas(Modifier.fillMaxSize()) {
             drawRect(Brush.verticalGradient(listOf(c1, c2)))
             val t = st.timeMs / 1000f
-            if (st.hole) drawBlackHole(t, st.holeDilation) else drawEnvironment(world.env, t)
+            if (st.hole) drawBlackHole(t, st.holeDilation) else if (!lite) drawEnvironment(world.env, t)
             val hump = sin(PI.toFloat() * st.warp)
             val cx = size.width / 2f
             val cy = size.height / 2f
@@ -612,13 +619,14 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                                 .border(2.dp, Color.White.copy(alpha = 0.35f), shape)
                                 .clickable { vm.swallow(card) },
                         ) {
-                            Crossfade(targetState = card, label = "screen") { c ->
+                            val face: @Composable (WorkCard) -> Unit = { c ->
                                 ScreenFace(
                                     card = c, active = st.activeKey == c.key, videoKey = st.trailers[c.key],
-                                    sound = st.sound, seed = slot.index, slotIndex = slot.index, st = st,
+                                    sound = st.sound, seed = slot.index, slotIndex = slot.index, st = st, lite = lite,
                                     onFail = { code -> vm.trailerFailed(c.key, code) },
                                 )
                             }
+                            if (lite) face(card) else Crossfade(targetState = card, label = "screen") { c -> face(c) }
                         }
                     }
                 }
@@ -734,6 +742,12 @@ fun TimeGateScreen(onExit: () -> Unit, onOpen: (WorkCard) -> Unit, vm: TimeGateV
                         )
                     }
                 }
+                item {
+                    AssistChip(
+                        onClick = { vm.prefs.setGateLite(!lite) },
+                        label = { Text((if (lite) "⚡✓ " else "⚡ ") + tr("وضع خفيف", "Lite mode"), color = Color.White) },
+                    )
+                }
                 item { TextButton(onClick = { st.sound = !st.sound }) { Text(if (st.sound) "🔊" else "🔇", color = Color.White) } }
             }
 
@@ -785,35 +799,39 @@ private const val CLIP_SECONDS = 5
 @Composable
 private fun ScreenFace(
     card: WorkCard, active: Boolean, videoKey: String?, sound: Boolean, seed: Int,
-    slotIndex: Int, st: TimeGateState, onFail: (Int) -> Unit,
+    slotIndex: Int, st: TimeGateState, lite: Boolean, onFail: (Int) -> Unit,
 ) {
-    val inf = rememberInfiniteTransition(label = "face")
-    val zoom = inf.animateFloat(
+    // Lite mode: a still poster (no endless animations) - much lighter on weak phones.
+    val inf = if (lite) null else rememberInfiniteTransition(label = "face")
+    val zoom = inf?.animateFloat(
         1.02f, 1.14f, infiniteRepeatable(tween(6500 + (seed % 5) * 700, easing = LinearEasing), RepeatMode.Reverse), label = "zoom",
     )
-    val sweep = inf.animateFloat(
+    val sweep = inf?.animateFloat(
         -1f, 2f, infiniteRepeatable(tween(3800 + (seed % 4) * 500, easing = LinearEasing), RepeatMode.Restart), label = "sweep",
     )
     Box(Modifier.fillMaxSize()) {
         PosterImage(
             Img.poster(card.posterPath), card.title,
             Modifier.fillMaxSize().graphicsLayer {
-                scaleX = zoom.value
-                scaleY = zoom.value
-                translationX = (zoom.value - 1.08f) * 90f
+                val z = zoom?.value ?: 1.0f
+                scaleX = z
+                scaleY = z
+                translationX = (z - 1.08f) * 90f
             },
         )
         if (active && !videoKey.isNullOrEmpty() && videoKey != "?") {
             TrailerPlayer(videoKey, sound, onFail, Modifier.fillMaxSize())
         }
         Canvas(Modifier.fillMaxSize()) {
-            val x = size.width * sweep.value
-            drawRect(
-                Brush.linearGradient(
-                    listOf(Color.Transparent, Color.White.copy(alpha = 0.16f), Color.Transparent),
-                    Offset(x - size.width * 0.3f, 0f), Offset(x + size.width * 0.3f, size.height),
-                ),
-            )
+            if (sweep != null) {
+                val x = size.width * sweep.value
+                drawRect(
+                    Brush.linearGradient(
+                        listOf(Color.Transparent, Color.White.copy(alpha = 0.16f), Color.Transparent),
+                        Offset(x - size.width * 0.3f, 0f), Offset(x + size.width * 0.3f, size.height),
+                    ),
+                )
+            }
             if (st.spotSlot == slotIndex) {
                 drawRect(Color(0xFFFFD54F).copy(alpha = 0.9f * st.spotEnv), style = Stroke(10f))
                 drawRect(Color(0xFFFFD54F).copy(alpha = 0.18f * st.spotEnv))

@@ -63,6 +63,7 @@ object Routes {
     const val COMPARE = "compare"
     const val CHOOSE = "choose"
     const val FINAL = "final"
+    const val WEB = "web/{type}/{id}"
     const val TIMEGATE = "timegate"
     const val TASTE = "taste"
     const val MYSTERY = "mystery"
@@ -73,6 +74,7 @@ object Routes {
     const val DETAILS = "details/{type}/{id}"
     const val PERSON = "person/{id}"
     fun details(type: String, id: Int) = "details/$type/$id"
+    fun web(type: String, id: Int) = "web/$type/$id"
     fun person(id: Int) = "person/$id"
 }
 
@@ -88,6 +90,7 @@ private val topItems = listOf(
 )
 
 private val moreItems = listOf(
+    TopItem("web/random/0", "🕸️ شبكة العوالم", "🕸️ Web of worlds"),
     TopItem(Routes.ROULETTE, "🎡 الروليت الذكي", "🎡 Smart roulette"),
     TopItem(Routes.DOORS, "🚪 ثلاثة أبواب", "🚪 Three doors"),
     TopItem(Routes.SLIDERS, "🎚️ اضبط تفضيلاتي", "🎚️ Tune preferences"),
@@ -197,7 +200,7 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
             composable(Routes.HOME) {
                 HomeScreen(
                     ads = container.ads, onOpen = openCard, onSearch = { nav.goTab(Routes.SEARCH) },
-                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onParty = { nav.navigate(Routes.PARTY) }, onTimeGate = { nav.navigate(Routes.TIMEGATE) },
+                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onParty = { nav.navigate(Routes.PARTY) }, onTimeGate = { nav.navigate(Routes.TIMEGATE) }, onWeb = { nav.navigate(Routes.web("random", 0)) },
                 )
             }
             composable(Routes.FILTER) {
@@ -218,6 +221,15 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
                 MoodScreen(onBack = { nav.popBackStack() }, onApply = { sel -> nav.popBackStack(); openFilter(sel) })
             }
             composable(Routes.TIMEGATE) { TimeGateScreen(onExit = { nav.popBackStack() }, onOpen = openCard) }
+            composable(
+                Routes.WEB,
+                arguments = listOf(navArgument("type") { type = NavType.StringType }, navArgument("id") { type = NavType.IntType }),
+            ) { be ->
+                WebScreen(
+                    type = be.arguments?.getString("type") ?: "random", id = be.arguments?.getInt("id") ?: 0,
+                    onExit = { nav.popBackStack() }, onOpen = openCard,
+                )
+            }
             composable(Routes.FINAL) { FinalStageScreen(container, onBack = { nav.popBackStack() }, onOpen = openCard) }
             composable(Routes.CHOOSE) {
                 ChooseScreen(onBack = { nav.popBackStack() }, onDone = { nav.popBackStack(); nav.navigate(Routes.DOORS) })
@@ -247,7 +259,7 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
                 val type = be.arguments?.getString("type") ?: "movie"
                 val id = be.arguments?.getInt("id") ?: 0
                 DetailsScreen(
-                    ads = container.ads, container = container, onOpenCompare = { nav.navigate(Routes.COMPARE) }, media = type, id = id,
+                    ads = container.ads, container = container, onWeb = { t, i -> nav.navigate(Routes.web(t, i)) }, onOpenCompare = { nav.navigate(Routes.COMPARE) }, media = type, id = id,
                     onBack = { nav.popBackStack() },
                     onOpen = openCard,
                     onPerson = { nav.navigate(Routes.person(it)) },

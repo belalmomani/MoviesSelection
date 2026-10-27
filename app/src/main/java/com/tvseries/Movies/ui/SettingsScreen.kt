@@ -90,6 +90,10 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val historyOn by p.historyEnabled.collectAsState()
     val key by p.apiKey.collectAsState()
     val hideWatched by p.hideWatched.collectAsState()
+    val gateLite by p.gateLite.collectAsState()
+    val holeAuto by p.holeAuto.collectAsState()
+    val skipIntro by p.skipIntro.collectAsState()
+    val gateSpeed by p.gateSpeed.collectAsState()
     val reminder by p.weeklyReminder.collectAsState()
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -200,6 +204,29 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
             tr("يُطبَّق على التحميل الجديد من TMDB. رفعه يقلل الأعمال المجهولة.", "Applies to new loads from TMDB. Raising it reduces obscure titles."),
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        HorizontalDivider()
+
+        Text(tr("بوابة الزمن", "Time Gate"), style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = gateLite, onCheckedChange = { p.setGateLite(it) })
+            Text(tr("وضع خفيف: شاشات أقل، بلا حركة مستمرة ولا مشاهد بيئية ولا مقدمة ولا ثقب (للهواتف الضعيفة أو لمن يشعر بدوار)", "Lite mode: fewer screens, no continuous motion, scenery, intro or black hole (for weak phones or motion sensitivity)"), Modifier.padding(start = 8.dp))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = holeAuto, onCheckedChange = { p.setHoleAuto(it) }, enabled = !gateLite)
+            Text(tr("السماح بفتح «ثقب الزمن» تلقائيًا أثناء الرحلة", "Allow the time hole to open by itself during the journey"), Modifier.padding(start = 8.dp))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = skipIntro, onCheckedChange = { p.setSkipIntro(it) })
+            Text(tr("تخطي المقدمة السينمائية دائمًا", "Always skip the cinematic intro"), Modifier.padding(start = 8.dp))
+        }
+        Text(tr("السرعة الافتراضية للرحلة:", "Default journey speed:"), style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(0.5f, 1f, 1.5f, 2f, 3f).forEach { sp ->
+                val label = "×" + (if (sp % 1f == 0f) sp.toInt().toString() else sp.toString())
+                if (sp == gateSpeed) Button(onClick = { p.setGateSpeed(sp) }) { Text(label) }
+                else OutlinedButton(onClick = { p.setGateSpeed(sp) }) { Text(label) }
+            }
+        }
         HorizontalDivider()
 
         Text(tr("التذكير الأسبوعي", "Weekly reminder"), style = MaterialTheme.typography.titleSmall)

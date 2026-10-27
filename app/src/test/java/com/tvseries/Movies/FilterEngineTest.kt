@@ -3,6 +3,9 @@ package com.tvseries.Movies
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.FilterEngine
 import com.tvseries.Movies.core.FilterState
+import com.tvseries.Movies.core.LinkKind
+import com.tvseries.Movies.core.WebCand
+import com.tvseries.Movies.core.WebGraph
 import com.tvseries.Movies.core.Outcome
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.core.Taxonomy
@@ -313,5 +316,23 @@ class FilterEngineTest {
         fun speed(i: Int) = com.tvseries.Movies.ui.orbitAngle(i, 1f) - com.tvseries.Movies.ui.orbitAngle(i, 0f)
         assertTrue(speed(inner) > speed(outer))
         assertTrue(ids.all { com.tvseries.Movies.ui.orbitR(it) in 0.30f..0.62f })
+    }
+
+    @Test fun webGraphPicksBalancedNeverRepeatingNeighbours() {
+        val cands = listOf(
+            WebCand("a", LinkKind.ACTOR, "X"), WebCand("b", LinkKind.ACTOR, "X"), WebCand("c", LinkKind.ACTOR, "X"),
+            WebCand("d", LinkKind.DIRECTOR, "Y"),
+            WebCand("a", LinkKind.GENRE, "Z"), // same title again: must not repeat
+            WebCand("e", LinkKind.WORLD, "k"), WebCand("f", LinkKind.SIMILAR, ""),
+            WebCand("start", LinkKind.SIMILAR, ""),
+        )
+        val picked = WebGraph.pick(cands, exclude = setOf("start"), limit = 6)
+        assertEquals(picked.map { it.key }.toSet().size, picked.size)   // no repeats
+        assertFalse(picked.any { it.key == "start" })                      // never back to where you came from
+        assertTrue(picked.size <= 6)
+        assertTrue(picked.map { it.kind }.toSet().size >= 4)              // a mix of reasons, not only actors
+        assertTrue(WebGraph.unexpected(setOf(878), setOf(35, 10749)))
+        assertFalse(WebGraph.unexpected(setOf(878, 28), setOf(28)))
+        assertFalse(WebGraph.unexpected(emptySet(), setOf(35)))
     }
 }
