@@ -48,7 +48,7 @@ class Prefs(private val store: KeyValueStore) {
     private val _language = MutableStateFlow(store.getString(K_LANG) ?: "ar")
     val language: StateFlow<String> = _language.asStateFlow()
 
-    private val _theme = MutableStateFlow(store.getString(K_THEME) ?: "system")
+    private val _theme = MutableStateFlow(store.getString(K_THEME) ?: "dark")
     val theme: StateFlow<String> = _theme.asStateFlow()
 
     private val _showAdult = MutableStateFlow(store.getString(K_ADULT) == "true")

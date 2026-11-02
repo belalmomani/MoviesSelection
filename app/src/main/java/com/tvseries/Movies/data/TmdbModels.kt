@@ -227,6 +227,7 @@ data class WorkCard(
     val year: String? = null,
     val rating: Double? = null,
     val votes: Int? = null,
+    val backdropPath: String? = null,
 ) {
     val key: String get() = "$mediaType:$id"
 }
@@ -255,6 +256,7 @@ fun ListItemDto.toCard(defaultMedia: String): WorkCard? {
         year = date?.take(4)?.takeIf { it.length == 4 },
         rating = voteAverage?.takeIf { (voteCount ?: 0) > 0 },
         votes = voteCount,
+        backdropPath = backdropPath,
     )
 }
 
@@ -271,5 +273,6 @@ fun DetailsDto.toCard(media: String): WorkCard {
         year = date?.take(4)?.takeIf { it.length == 4 },
         rating = voteAverage?.takeIf { (voteCount ?: 0) > 0 },
         votes = voteCount,
+        backdropPath = backdropPath,
     )
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -23,6 +24,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,18 +69,24 @@ fun PosterImage(url: String?, fallbackText: String, modifier: Modifier) {
 }
 
 @Composable
-fun PosterCard(card: WorkCard, onClick: () -> Unit, modifier: Modifier = Modifier.width(120.dp)) {
+fun PosterCard(card: WorkCard, onClick: () -> Unit, modifier: Modifier = Modifier.width(124.dp)) {
     Column(modifier.clickable(onClick = onClick)) {
-        PosterImage(
-            Img.poster(card.posterPath), card.title,
-            Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)),
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(card.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-        val meta = listOfNotNull(card.year, card.rating?.let { "★ " + fmt1(it) }).joinToString(" · ")
-        if (meta.isNotEmpty()) {
-            Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            PosterImage(
+                Img.poster(card.posterPath), card.title,
+                Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(14.dp)),
+            )
+            card.rating?.let {
+                Text(
+                    "★ " + fmt1(it), color = Color.White, style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(8.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
         }
+        Spacer(Modifier.height(6.dp))
+        Text(card.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+        card.year?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
@@ -139,10 +147,11 @@ fun EmptyBox(text: String, modifier: Modifier = Modifier.fillMaxSize()) {
 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text, style = MaterialTheme.typography.titleMedium,
-        modifier = modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-    )
+    Row(modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(width = 4.dp, height = 18.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.primary))
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 /** Banner placed only on Home and Details (never on the filter screen). Renders nothing when ads are off. */

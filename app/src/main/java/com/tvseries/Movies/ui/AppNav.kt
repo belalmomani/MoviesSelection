@@ -1,5 +1,10 @@
 package com.tvseries.Movies.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -96,29 +101,27 @@ private val moreItems = listOf(
     TopItem(Routes.SLIDERS, "🎚️ اضبط تفضيلاتي", "🎚️ Tune preferences"),
 )
 
-/** Top bar: four quick-start experiences, plus "More" for the extra pages. */
+/** Top bar: brand row (logo, title, all/movies/series pill) + one scrollable row of quick experiences. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TopActionBar(type: String, onType: (String) -> Unit, onGo: (String) -> Unit) {
     var menu by remember { mutableStateOf(false) }
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Movies Selection", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                listOf("all" to tr("الكل", "All"), "movie" to tr("أفلام", "Movies"), "tv" to tr("مسلسلات", "Series")).forEach { (v, label) ->
-                    FilterChip(
-                        selected = type == v, onClick = { onType(v) }, label = { Text(label) },
-                        modifier = Modifier.padding(start = 4.dp),
-                    )
-                }
+                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.tvseries.Movies.R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(30.dp))
+                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                Text(
+                    "Movies Selection", style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                )
+                TypePill(type, onType)
             }
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(topItems, key = { it.route }) { t ->
-                    AssistChip(onClick = { onGo(t.route) }, label = { Text(tr(t.ar, t.en)) })
-                }
+                items(topItems, key = { it.route }) { t -> TopChip(tr(t.ar, t.en)) { onGo(t.route) } }
                 item {
                     Box {
-                        AssistChip(onClick = { menu = true }, label = { Text(tr("المزيد ▾", "More ▾")) })
+                        TopChip(tr("المزيد ▾", "More ▾")) { menu = true }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             moreItems.forEach { m ->
                                 DropdownMenuItem(text = { Text(tr(m.ar, m.en)) }, onClick = { menu = false; onGo(m.route) })
@@ -129,6 +132,16 @@ private fun TopActionBar(type: String, onType: (String) -> Unit, onGo: (String) 
             }
         }
     }
+}
+
+@Composable
+private fun TopChip(label: String, onClick: () -> Unit) {
+    Text(
+        label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1,
+        modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }
 
 private val tabs = listOf(
@@ -200,7 +213,9 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
             composable(Routes.HOME) {
                 HomeScreen(
                     ads = container.ads, onOpen = openCard, onSearch = { nav.goTab(Routes.SEARCH) },
-                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onParty = { nav.navigate(Routes.PARTY) }, onTimeGate = { nav.navigate(Routes.TIMEGATE) }, onWeb = { nav.navigate(Routes.web("random", 0)) },
+                    onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onChoose = { nav.navigate(Routes.CHOOSE) },
+                    onParty = { nav.navigate(Routes.PARTY) }, onTimeGate = { nav.navigate(Routes.TIMEGATE) },
+                    onWeb = { t, i -> nav.navigate(Routes.web(t, i)) },
                 )
             }
             composable(Routes.FILTER) {
