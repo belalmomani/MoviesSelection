@@ -217,6 +217,16 @@ class DataLayerTest {
         assertTrue(Prefs(store).gateLite.value)
     }
 
+    @Test fun tvEditionIsAutomaticByDefaultAndCanBeForced() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        assertEquals("auto", p.tvMode.value)
+        p.setTvMode("on")
+        assertEquals("on", Prefs(store).tvMode.value)
+        p.clearUserData() // personal-data erase keeps the edition choice
+        assertEquals("on", Prefs(store).tvMode.value)
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

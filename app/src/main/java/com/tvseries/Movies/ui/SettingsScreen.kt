@@ -90,6 +90,7 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val historyOn by p.historyEnabled.collectAsState()
     val key by p.apiKey.collectAsState()
     val hideWatched by p.hideWatched.collectAsState()
+    val tvMode by p.tvMode.collectAsState()
     val gateLite by p.gateLite.collectAsState()
     val holeAuto by p.holeAuto.collectAsState()
     val skipIntro by p.skipIntro.collectAsState()
@@ -176,6 +177,13 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
         Text(tr("اللغة", "Language"), style = MaterialTheme.typography.titleSmall)
         RadioRow("العربية", lang == "ar") { p.setLanguage("ar") }
         RadioRow("English", lang == "en") { p.setLanguage("en") }
+        HorizontalDivider()
+
+        Text(tr("واجهة التلفاز", "TV edition"), style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = tvMode == "on", onCheckedChange = { p.setTvMode(if (it) "on" else "auto") })
+            Text(tr("تفعيل واجهة التلفاز يدويًا للتجربة (تعمل تلقائيًا على التلفاز؛ للخروج منها على الهاتف أوقف المفتاح بالريموت أو باللمس)", "Force the TV edition (it is automatic on a TV; turn it off here to go back on a phone)"), Modifier.padding(start = 8.dp))
+        }
         HorizontalDivider()
 
         Text(tr("المظهر", "Theme"), style = MaterialTheme.typography.titleSmall)

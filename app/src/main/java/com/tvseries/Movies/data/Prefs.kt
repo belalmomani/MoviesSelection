@@ -94,6 +94,9 @@ class Prefs(private val store: KeyValueStore) {
     private val _gateSpeed = MutableStateFlow(store.getString(K_GATE_SPEED)?.toFloatOrNull() ?: 1f)
     val gateSpeed: StateFlow<Float> = _gateSpeed.asStateFlow()
 
+    private val _tvMode = MutableStateFlow(store.getString(K_TV_MODE) ?: "auto")
+    val tvMode: StateFlow<String> = _tvMode.asStateFlow()
+
     private val _contentType = MutableStateFlow(store.getString(K_CONTENT) ?: "all")
     val contentType: StateFlow<String> = _contentType.asStateFlow()
 
@@ -137,6 +140,9 @@ class Prefs(private val store: KeyValueStore) {
     fun setHoleAuto(v: Boolean) { _holeAuto.value = v; store.putString(K_HOLE_AUTO, v.toString()) }
     fun setSkipIntro(v: Boolean) { _skipIntro.value = v; store.putString(K_SKIP_INTRO, v.toString()) }
     fun setGateSpeed(v: Float) { _gateSpeed.value = v; store.putString(K_GATE_SPEED, v.toString()) }
+
+    /** "auto" = TV edition only on a real TV; "on" = force it (to preview on a phone). */
+    fun setTvMode(v: String) { _tvMode.value = v; store.putString(K_TV_MODE, v) }
 
     fun setContentType(v: String) { _contentType.value = v; store.putString(K_CONTENT, v) }
 
@@ -240,6 +246,7 @@ class Prefs(private val store: KeyValueStore) {
         const val K_HOLE_AUTO = "hole_auto"
         const val K_SKIP_INTRO = "skip_intro"
         const val K_GATE_SPEED = "gate_speed"
+        const val K_TV_MODE = "tv_mode"
         const val K_CONTENT = "content_type"
         const val K_UPDATE_TOKEN = "update_token"
         const val K_INTENT = "user_intent"
