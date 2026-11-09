@@ -100,7 +100,7 @@ class ChooseViewModel(app: Application) : AndroidViewModel(app) {
                 val r = c.session.ranked(UserIntent(tension, fantasy, depth, Selection()), c.prefs.taste.value)
                 val engine = FilterEngine(r.ranked.take(60).map { it.work }, r.taxonomy)
                 val res = engine.evaluate(selection)
-                val allowed = setOf(Axes.GENRE, Axes.WORLD, Axes.COUNTRY, Axes.LANGUAGE, Axes.YEAR, Axes.FORMAT)
+                val allowed = setOf(Axes.SPHERE, Axes.GENRE, Axes.WORLD, Axes.COUNTRY, Axes.LANGUAGE, Axes.YEAR, Axes.FORMAT)
                 val sug = engine.suggest(selection, res).firstOrNull { it.axis in allowed && it.axis !in skipped }
                 if (sug == null || res.matched.size <= 3) {
                     finish()

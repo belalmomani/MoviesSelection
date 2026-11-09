@@ -179,7 +179,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun isMappable(sel: Selection): Boolean =
-        listOf(Axes.GENRE, Axes.LANGUAGE, Axes.COUNTRY, Axes.YEAR, Axes.RATING).any { sel.include[it]?.isNotEmpty() == true }
+        listOf(Axes.SPHERE, Axes.GENRE, Axes.LANGUAGE, Axes.COUNTRY, Axes.YEAR, Axes.RATING).any { sel.include[it]?.isNotEmpty() == true }
 
     /** Loads more titles from TMDB. [refine] = ask TMDB for titles matching the server-filterable conditions. */
     fun loadMore(refine: Boolean) {
@@ -235,6 +235,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
                 v.startsWith("region.") -> out += Regions.members[v].orEmpty()
             }
         }
+        if ("sphere.arab" in sel.include[Axes.SPHERE].orEmpty()) out += Regions.arab
         return out.filter { it in Regions.arab }.toSet()
     }
 

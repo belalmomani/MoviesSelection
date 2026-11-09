@@ -51,7 +51,7 @@ import com.tvseries.Movies.data.WorkCard
 
 /** Axes asked first in the guided flow. Others (cast, director, spoken languages) are only a fallback. */
 private val primaryAxes = setOf(
-    Axes.FORMAT, Axes.WORLD, Axes.MOOD, Axes.TENSION, Axes.GENRE, Axes.COUNTRY, Axes.LANGUAGE, Axes.YEAR, Axes.RATING,
+    Axes.SPHERE, Axes.FORMAT, Axes.WORLD, Axes.MOOD, Axes.TENSION, Axes.GENRE, Axes.COUNTRY, Axes.LANGUAGE, Axes.YEAR, Axes.RATING,
     Axes.RUNTIME, Axes.SEASONS, Axes.STATUS, Axes.KEYWORD,
 )
 
@@ -67,6 +67,7 @@ internal fun questionTitle(axis: String, fallback: String): String = when (axis)
     Axes.SEASONS -> tr("كم عدد المواسم؟", "How many seasons?")
     Axes.STATUS -> tr("ما حالة العمل؟", "Status?")
     Axes.KEYWORD -> tr("أي موضوع؟", "Which topic?")
+    Axes.SPHERE -> tr("أي نوع من الإنتاج تريد؟", "Which kind of production?")
     Axes.WORLD -> tr("أي عالم سينمائي؟", "Which cinema world?")
     Axes.MOOD -> tr("ماذا تريد أن يفعل بك العمل؟", "What should it do for you?")
     Axes.TENSION -> tr("ما مستوى التوتر؟", "How tense?")
@@ -199,7 +200,7 @@ fun FilterScreen(
 
             // Pick ONE question: best-ranked axis not yet skipped, preferring the friendly axes.
             val candidates = u.suggestions.map { it.axis }.filter { it != Axes.AVOID && it !in skipped && u.axisViews[it] != null }
-            val questionAxis = (candidates.firstOrNull { it in primaryAxes } ?: candidates.firstOrNull())
+            val questionAxis = (candidates.firstOrNull { it == Axes.SPHERE } ?: candidates.firstOrNull { it in primaryAxes } ?: candidates.firstOrNull())
                 .takeIf { outcome is Outcome.Many }
             val questionView = questionAxis?.let { u.axisViews[it] }
 

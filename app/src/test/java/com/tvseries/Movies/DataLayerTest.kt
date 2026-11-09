@@ -227,6 +227,42 @@ class DataLayerTest {
         assertEquals("on", Prefs(store).tvMode.value)
     }
 
+    @Test fun spheresSeparateWesternEastAsiaArabAndAnimation() {
+        val sp = com.tvseries.Movies.data.Spheres
+        assertEquals(sp.EAST_ASIA, sp.of("ja", null, listOf(18)))
+        assertEquals(sp.EAST_ASIA, sp.of("ko", listOf("KR"), listOf(18)))
+        assertEquals(sp.EAST_ASIA, sp.of("zh", null, null))
+        assertEquals(sp.ANIMATION, sp.of("ja", listOf("JP"), listOf(16, 14)))   // anime belongs to animation only
+        assertEquals(sp.ANIMATION, sp.of("en", listOf("US"), listOf(16)))
+        assertEquals(sp.ARAB, sp.of("ar", null, listOf(18)))
+        assertEquals(sp.ARAB, sp.of("fr", listOf("MA"), listOf(18)))            // production in an Arab country
+        assertEquals(sp.WESTERN, sp.of("en", listOf("US", "GB"), listOf(28)))
+        assertEquals(sp.WESTERN, sp.of("fr", null, listOf(35)))                 // language fallback when no country yet
+        assertEquals(sp.OTHER, sp.of("tr", listOf("TR"), listOf(18)))
+        assertNull(sp.of(null, null, listOf(18)))                               // unknown stays unknown
+        val kr = WorkMapper.fromListItem("tv", ListItemDto(id = 1, name = "x", originalLanguage = "ko", genreIds = listOf(18))).work
+        assertEquals(setOf("sphere.east_asia"), kr.facets[Axes.SPHERE])
+        val anime = WorkMapper.fromListItem("tv", ListItemDto(id = 2, name = "y", originalLanguage = "ja", genreIds = listOf(16))).work
+        assertEquals(setOf("sphere.animation"), anime.facets[Axes.SPHERE])
+    }
+
+    @Test fun sphereQueriesKeepAnimationSeparateAndGroupEastAsia() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        fun sel(sp: String) = Selection().toggleInclude(Axes.SPHERE, sp)
+        val ea = ServerRefine.refineAll(sel("sphere.east_asia"), t, "tv", DiscoverQuery())
+        assertEquals(setOf("KR", "JP", "CN", "HK", "TW", "MO"), ea.flatMap { it.countries }.toSet()) // together
+        assertTrue(ea.all { 16 in it.withoutGenres })                                                   // no animation inside
+        val west = ServerRefine.refineAll(sel("sphere.western"), t, "movie", DiscoverQuery())
+        assertEquals(1, west.size)
+        assertTrue("US" in west[0].countries && 16 in west[0].withoutGenres)
+        val anim = ServerRefine.refineAll(sel("sphere.animation"), t, "movie", DiscoverQuery())
+        assertEquals(setOf(16), anim.single().genres)
+        assertTrue(anim.single().withoutGenres.isEmpty())
+        val arab = ServerRefine.refineAll(sel("sphere.arab"), t, "tv", DiscoverQuery(minVotes = 100))
+        assertTrue(arab.size > 2 && arab.all { it.minVotes <= 5 })
+        assertEquals("16", DiscoverQuery(withoutGenres = setOf(16)).params("tv", 1, "ar")["without_genres"])
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

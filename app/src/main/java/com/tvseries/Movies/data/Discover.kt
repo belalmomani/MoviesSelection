@@ -7,6 +7,7 @@ import com.tvseries.Movies.core.Taxonomy
 /** Parameters for TMDB /discover/{movie|tv}. */
 data class DiscoverQuery(
     val genres: Set<Int> = emptySet(),
+    val withoutGenres: Set<Int> = emptySet(),
     val language: String? = null,
     val countries: Set<String> = emptySet(),
     val yearFrom: Int? = null,
@@ -19,7 +20,7 @@ data class DiscoverQuery(
     val sort: String = "popularity.desc",
 ) {
     fun signature(): String =
-        "g=${genres.sorted()};l=$language;c=${countries.sorted()};y=$yearFrom-$yearTo;r=$minRating;v=$minVotes-$maxVotes;k=${keywords.sorted()};a=$includeAdult;s=$sort"
+        "g=${genres.sorted()};wg=${withoutGenres.sorted()};l=$language;c=${countries.sorted()};y=$yearFrom-$yearTo;r=$minRating;v=$minVotes-$maxVotes;k=${keywords.sorted()};a=$includeAdult;s=$sort"
 
     fun params(media: String, page: Int, uiLanguage: String): Map<String, String> {
         val m = LinkedHashMap<String, String>()
@@ -29,6 +30,7 @@ data class DiscoverQuery(
         m["include_adult"] = includeAdult.toString()
         m["vote_count.gte"] = minVotes.toString()
         if (genres.isNotEmpty()) m["with_genres"] = genres.sorted().joinToString("|")
+        if (withoutGenres.isNotEmpty()) m["without_genres"] = withoutGenres.sorted().joinToString(",")
         language?.let { m["with_original_language"] = it }
         if (countries.isNotEmpty()) m["with_origin_country"] = countries.sorted().joinToString("|")
         minRating?.let { m["vote_average.gte"] = it.toString() }
@@ -55,17 +57,42 @@ object ServerRefine {
     private fun lowVotesForArabic(q: DiscoverQuery): DiscoverQuery =
         if (q.language == "ar" || q.countries.any { it in arabSet }) q.copy(minVotes = minOf(q.minVotes, 5)) else q
 
+    /** Applies a production sphere to a query; null when the sphere cannot match the other conditions. */
+    private fun applySphere(sphere: String, q: DiscoverQuery): DiscoverQuery? {
+        if (sphere == Spheres.ANIMATION) return q.copy(genres = setOf(16))
+        val wanted = Spheres.countriesOf(sphere) ?: return null
+        val c = if (q.countries.isEmpty()) wanted else q.countries.intersect(wanted)
+        if (c.isEmpty()) return null
+        // animation is its own sphere, so the other spheres never include it
+        return q.copy(countries = c, withoutGenres = q.withoutGenres + 16)
+    }
+
     /**
-     * One or more discover queries for the selection. Several countries are split into one query each
-     * (so each loaded title can be stamped with its country; list data has no country for movies), and
-     * Arab-region selections also add an "original language = Arabic" query.
+     * One or more discover queries for the selection. A chosen production sphere (Arab / East Asia / Western /
+     * Animation / Other) becomes its own query. Arab and East-Asian spheres are split into one query per country
+     * (so Japanese, Korean and Chinese titles are all represented together); Western / Other use a single query.
      */
     fun refineAll(sel: Selection, taxonomy: Taxonomy, media: String, base: DiscoverQuery): List<DiscoverQuery> {
-        val q = lowVotesForArabic(refine(sel, taxonomy, media, base) ?: return emptyList())
+        val spheres = sel.include[Axes.SPHERE].orEmpty()
+        if (spheres.isNotEmpty()) {
+            val without = sel.copy(include = sel.include - Axes.SPHERE)
+            val b = refine(without, taxonomy, media, base) ?: return emptyList()
+            return spheres.mapNotNull { sp -> applySphere(sp, b)?.let { lowVotesForArabic(it) to sp } }
+                .flatMap { (q, sp) -> if (sp == Spheres.WESTERN || sp == Spheres.OTHER) listOf(q) else expand(q) }
+                .distinctBy { it.signature() }
+        }
+        return expand(lowVotesForArabic(refine(sel, taxonomy, media, base) ?: return emptyList()))
+    }
+
+    private val eastAsiaPriority = listOf("KR", "JP", "CN", "HK", "TW", "MO")
+
+    private fun expand(q: DiscoverQuery): List<DiscoverQuery> {
         if (q.countries.size <= 1) return listOf(q)
-        val ordered = if (q.countries.all { it in arabSet }) {
-            arabPriority.filter { it in q.countries } + q.countries.filter { it !in arabPriority }.sorted()
-        } else q.countries.sorted()
+        val ordered = when {
+            q.countries.all { it in arabSet } -> arabPriority.filter { it in q.countries } + q.countries.filter { it !in arabPriority }.sorted()
+            q.countries.all { it in Spheres.eastAsiaCountries } -> eastAsiaPriority.filter { it in q.countries }
+            else -> q.countries.sorted()
+        }
         val out = ordered.take(8).map { q.copy(countries = setOf(it)) }.toMutableList()
         if (q.language == null && q.countries.all { it in arabSet }) out += q.copy(countries = emptySet(), language = "ar")
         return out

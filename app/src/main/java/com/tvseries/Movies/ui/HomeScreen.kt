@@ -179,6 +179,10 @@ fun HomeScreen(
     val trending by vm.flow("trending").collectAsState()
 
     val quick = listOf(
+        Triple("أجنبي", "Western", preset(Axes.SPHERE, "sphere.western")),
+        Triple("شرق آسيا (ياباني · صيني · كوري)", "East Asia (JP · CN · KR)", preset(Axes.SPHERE, "sphere.east_asia")),
+        Triple("عربي", "Arab", preset(Axes.SPHERE, "sphere.arab")),
+        Triple("أنيميشن", "Animation", preset(Axes.SPHERE, "sphere.animation")),
         Triple("أفلام", "Movies", preset(Axes.FORMAT, "format.movie")),
         Triple("مسلسلات", "Series", preset(Axes.FORMAT, "format.tv")),
         Triple("مسلسلات عربية", "Arabic series", Selection(include = mapOf(Axes.FORMAT to setOf("format.tv"), Axes.COUNTRY to setOf("region.arab")))),

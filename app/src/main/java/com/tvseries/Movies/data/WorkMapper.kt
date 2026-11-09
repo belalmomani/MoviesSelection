@@ -140,6 +140,9 @@ object WorkMapper {
             facets[Axes.LANGUAGE] = setOf(node.id)
         }
 
+        // Production sphere (Arab / East Asia / Western / Animation / Other), estimated from the fields above.
+        Spheres.of(f.language, f.countries?.map { it.first }, f.genreIds)?.let { facets[Axes.SPHERE] = setOf(it) }
+
         // Ratings with fewer than 10 votes are not reliable -> unknown.
         if (f.voteAverage != null && (f.voteCount ?: 0) >= 10) {
             val band = floor(f.voteAverage).toInt()

@@ -210,6 +210,12 @@ object TaxonomySeed {
         out += est("avoid.gore", Axes.AVOID, "مشاهد دموية", "Gore / blood", 0.7)
         out += est("avoid.school", Axes.AVOID, "قصص مدرسية", "School stories", 0.7)
         out += est("avoid.sad_ending", Axes.AVOID, "نهاية حزينة", "Sad ending (avoid)", 0.7)
+        // Production spheres: derived from genres + language + countries (see Spheres): estimates, flagged as such.
+        out += est("sphere.western", Axes.SPHERE, "أجنبي (غربي)", "Western (foreign)", 0.8)
+        out += est("sphere.east_asia", Axes.SPHERE, "شرق آسيا: ياباني · صيني · كوري", "East Asia: Japanese · Chinese · Korean", 0.85)
+        out += est("sphere.arab", Axes.SPHERE, "عربي", "Arab", 0.85)
+        out += est("sphere.animation", Axes.SPHERE, "أنيميشن (كل الدول)", "Animation (all countries)", 0.95)
+        out += est("sphere.other", Axes.SPHERE, "دول أخرى (تركيا · الهند · أمريكا اللاتينية...)", "Other regions (Türkiye · India · Latin America...)", 0.8)
         out += Worlds.nodes()
         return out
     }
