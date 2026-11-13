@@ -91,6 +91,7 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val key by p.apiKey.collectAsState()
     val hideWatched by p.hideWatched.collectAsState()
     val tvMode by p.tvMode.collectAsState()
+    val adsConsent by p.adsConsent.collectAsState()
     val gateLite by p.gateLite.collectAsState()
     val holeAuto by p.holeAuto.collectAsState()
     val skipIntro by p.skipIntro.collectAsState()
@@ -112,7 +113,7 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
             }
         }
     }
-    LaunchedEffect(Unit) { checkUpdate() }
+    LaunchedEffect(Unit) { if (BuildConfig.UPDATER_ENABLED) checkUpdate() }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             p.setWeeklyReminder(true)
@@ -124,6 +125,7 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(tr("الإعدادات", "Settings"), style = MaterialTheme.typography.titleLarge)
 
+        if (BuildConfig.UPDATER_ENABLED) {
         Text(tr("التحديث", "Update"), style = MaterialTheme.typography.titleSmall)
         Text(
             tr("الإصدار الحالي: ", "Current version: ") + "v${BuildConfig.VERSION_NAME}",
@@ -174,10 +176,31 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
         )
         HorizontalDivider()
 
+        } else {
+            Text(tr("الإصدار: ", "Version: ") + "v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                tr("التحديثات تصلك من Google Play.", "Updates are delivered by Google Play."),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
+        }
+
         Text(tr("اللغة", "Language"), style = MaterialTheme.typography.titleSmall)
         RadioRow("العربية", lang == "ar") { p.setLanguage("ar") }
         RadioRow("English", lang == "en") { p.setLanguage("en") }
         HorizontalDivider()
+
+        if (BuildConfig.ADS_ENABLED && adsConsent != "unset") {
+            Text(tr("الإعلانات والخصوصية", "Ads & privacy"), style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = adsConsent == "yes", onCheckedChange = {
+                    p.setAdsConsent(if (it) "yes" else "no")
+                    runCatching { container.ads.setPersonalized(ctx, it) }
+                })
+                Text(tr("السماح بإعلانات مخصصة لاهتماماتي (إيقافه يُبقي إعلانات عامة)", "Allow ads personalised to my interests (off = generic ads)"), Modifier.padding(start = 8.dp))
+            }
+            HorizontalDivider()
+        }
 
         Text(tr("واجهة التلفاز", "TV edition"), style = MaterialTheme.typography.titleSmall)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -340,6 +363,18 @@ fun AboutScreen(onBack: () -> Unit) {
             tr("الإعلانات: بانر في الرئيسية وصفحة العمل فقط، ولا يظهر أثناء التصفية أو الاختيار.", "Ads: a banner on Home and Details only; never while filtering or choosing."),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        val aboutUri = androidx.compose.ui.platform.LocalUriHandler.current
+        Text(
+            tr(
+                "مقاطع الإعلانات في بوابة الزمن تُعرض عبر خدمات YouTube API. باستعمالها فأنت توافق على شروط خدمة YouTube وسياسة خصوصية Google.",
+                "Trailers in the Time Gate are played through YouTube API Services. By using them you agree to the YouTube Terms of Service and the Google Privacy Policy.",
+            ),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { aboutUri.openUri("https://www.youtube.com/t/terms") }) { Text("YouTube Terms") }
+            OutlinedButton(onClick = { aboutUri.openUri("https://policies.google.com/privacy") }) { Text("Google Privacy") }
+        }
         if (BuildConfig.PRIVACY_URL.isNotBlank()) {
             val uri = androidx.compose.ui.platform.LocalUriHandler.current
             OutlinedButton(onClick = { uri.openUri(BuildConfig.PRIVACY_URL) }) { Text(tr("سياسة الخصوصية", "Privacy policy")) }

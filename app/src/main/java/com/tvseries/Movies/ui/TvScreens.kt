@@ -157,7 +157,7 @@ fun TvHomeScreen(container: AppContainer, onOpen: (WorkCard) -> Unit, vm: HomeVi
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(tr("أهلًا بك", "Welcome"), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-                TypePill(type) { container.prefs.setContentType(it) }
+                TypePill(type, onType = { container.prefs.setContentType(it) })
             }
         }
         item {

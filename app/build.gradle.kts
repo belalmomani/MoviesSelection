@@ -22,11 +22,11 @@ android {
     defaultConfig {
         applicationId = "com.tvseries.Movies"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 34 // BEFORE SUBMITTING TO PLAY: raise compileSdk/targetSdk to the level Play Console requires (see PLAY_STORE.md)
         // Every CI build gets a higher versionCode (run number) so it installs OVER the previous one.
         val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionCode = 100 + buildNumber
-        versionName = "1.13.0.$buildNumber"
+        versionName = "1.14.0.$buildNumber"
         buildConfigField("int", "BUILD_NUMBER", buildNumber.toString())
 
         // The TMDB key is NEVER stored in the repository. It is read from a Gradle property
@@ -69,7 +69,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Test builds (GitHub Releases) may update themselves. Play builds (release) must NOT: see PLAY_STORE.md.
+            buildConfigField("boolean", "UPDATER_ENABLED", "true")
+        }
         release {
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

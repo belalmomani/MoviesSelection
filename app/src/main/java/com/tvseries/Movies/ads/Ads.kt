@@ -17,7 +17,11 @@ enum class AdPlacement { HOME_BANNER, DETAILS_BANNER, INTERSTITIAL_BETWEEN_SESSI
 
 interface AdsProvider {
     val enabled: Boolean
-    fun initialize(context: Context)
+    /** Called only after the user answered the consent screen. [personalized] = user agreed to personalised ads. */
+    fun initialize(context: Context, personalized: Boolean)
+
+    /** The user changed the choice in Settings. */
+    fun setPersonalized(context: Context, personalized: Boolean)
     fun canShowAt(placement: AdPlacement, userIsFiltering: Boolean): Boolean
     fun createBanner(context: Context): View?
 }
@@ -33,7 +37,8 @@ object AdPolicy {
 
 class NoOpAdsProvider : AdsProvider {
     override val enabled: Boolean = false
-    override fun initialize(context: Context) {}
+    override fun initialize(context: Context, personalized: Boolean) {}
+    override fun setPersonalized(context: Context, personalized: Boolean) {}
     override fun canShowAt(placement: AdPlacement, userIsFiltering: Boolean): Boolean = false
     override fun createBanner(context: Context): View? = null
 }

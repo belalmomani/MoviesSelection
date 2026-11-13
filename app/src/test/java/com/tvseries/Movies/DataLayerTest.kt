@@ -263,6 +263,16 @@ class DataLayerTest {
         assertEquals("16", DiscoverQuery(withoutGenres = setOf(16)).params("tv", 1, "ar")["without_genres"])
     }
 
+    @Test fun adsConsentStartsUnsetAndIsRemembered() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        assertEquals("unset", p.adsConsent.value) // nothing ad-related may start before the user answers
+        p.setAdsConsent("no")
+        assertEquals("no", Prefs(store).adsConsent.value)
+        p.clearUserData() // erasing personal data does not silently re-grant or reset the consent choice
+        assertEquals("no", Prefs(store).adsConsent.value)
+    }
+
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")

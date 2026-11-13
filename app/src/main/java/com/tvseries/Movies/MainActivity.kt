@@ -5,7 +5,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -15,6 +21,7 @@ import androidx.compose.runtime.setValue
 import java.io.File
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import com.tvseries.Movies.ui.ConsentScreen
 import com.tvseries.Movies.ui.CrashScreen
 import com.tvseries.Movies.ui.LocalLang
 import com.tvseries.Movies.ui.MoviesRoot
@@ -40,6 +47,7 @@ class MainActivity : ComponentActivity() {
             val theme by container.prefs.theme.collectAsState()
             val tvPref by container.prefs.tvMode.collectAsState()
             val tv = tvPref == "on" || (tvPref == "auto" && autoTv)
+            val adsConsent by container.prefs.adsConsent.collectAsState()
             // Language changed in Settings: recreate so the new locale/layout direction is applied everywhere.
             LaunchedEffect(lang) { if (lang != startLang) recreate() }
             val dark = when (theme) {
@@ -52,6 +60,12 @@ class MainActivity : ComponentActivity() {
                 LocalLayoutDirection provides if (lang == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr,
             ) {
                 MoviesTheme(dark = dark) {
+                  // Targeting Android 15+ draws edge-to-edge: keep content inside the system bars / cutouts / keyboard.
+                  androidx.compose.foundation.layout.Box(
+                    Modifier.fillMaxSize()
+                        .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
+                        .windowInsetsPadding(WindowInsets.safeDrawing),
+                  ) {
                     var crash by remember { mutableStateOf(runCatching { File(filesDir, CRASH_FILE).takeIf { it.exists() }?.readText() }.getOrNull()) }
                     val c = crash
                     if (c != null) {
@@ -59,9 +73,15 @@ class MainActivity : ComponentActivity() {
                             runCatching { File(filesDir, CRASH_FILE).delete() }
                             crash = null
                         }
+                    } else if (BuildConfig.ADS_ENABLED && !tv && adsConsent == "unset") {
+                        ConsentScreen { personalized ->
+                            container.prefs.setAdsConsent(if (personalized) "yes" else "no")
+                            runCatching { container.ads.initialize(applicationContext, personalized) }
+                        }
                     } else {
                         if (tv) TvRoot(container) else MoviesRoot(container, pickFromWatchlist)
                     }
+                  }
                 }
             }
         }

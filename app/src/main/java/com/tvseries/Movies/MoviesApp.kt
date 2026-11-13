@@ -38,6 +38,7 @@ class AppContainer(app: Application) {
     val updateAvailable = MutableStateFlow<UpdateInfo?>(null)
 
     suspend fun checkUpdateQuietly() {
+        if (!BuildConfig.UPDATER_ENABLED) return
         try {
             val info = updates.latest()
             updateAvailable.value = info?.takeIf { Updates.isNewer(it.build, BuildConfig.BUILD_NUMBER) }
@@ -82,6 +83,8 @@ class MoviesApp : Application() {
             previous?.uncaughtException(t, e)
         }
         container = AppContainer(this)
-        runCatching { container.ads.initialize(this) }
+        // Ads start only if the user already answered the consent screen (first run: MainActivity asks).
+        val consent = container.prefs.adsConsent.value
+        if (consent != "unset") runCatching { container.ads.initialize(this, consent == "yes") }
     }
 }

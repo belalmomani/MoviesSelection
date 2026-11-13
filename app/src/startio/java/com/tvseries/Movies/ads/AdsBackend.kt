@@ -10,15 +10,26 @@ import com.tvseries.Movies.BuildConfig
 class StartIoAdsProvider(private val appId: String) : AdsProvider {
     override val enabled: Boolean = true
 
-    override fun initialize(context: Context) {
+    @Volatile
+    private var ready = false
+
+    override fun initialize(context: Context, personalized: Boolean) {
+        // The user's choice is passed to the ad SDK BEFORE it starts ("pas" = personalised ad serving).
+        StartAppSDK.setUserConsent(context, "pas", System.currentTimeMillis(), personalized)
         StartAppSDK.init(context, appId, false)
         StartAppAd.disableSplash()
         // Debug builds show TEST ads only (clicking real ads on your own build can get the account banned).
         StartAppSDK.setTestAdsEnabled(BuildConfig.DEBUG)
+        ready = true
     }
 
+    override fun setPersonalized(context: Context, personalized: Boolean) {
+        StartAppSDK.setUserConsent(context, "pas", System.currentTimeMillis(), personalized)
+    }
+
+    /** No ad is shown before the user has answered the consent screen (the SDK is not even started). */
     override fun canShowAt(placement: AdPlacement, userIsFiltering: Boolean): Boolean =
-        AdPolicy.allowed(placement, userIsFiltering)
+        ready && AdPolicy.allowed(placement, userIsFiltering)
 
     override fun createBanner(context: Context): View? = Banner(context)
 }
