@@ -415,6 +415,24 @@ class DataLayerTest {
         for (id in ids) assertTrue("missing $id", t.contains(id))
     }
 
+    @Test fun animationSphereKeepsTheChosenGenreAsAnAndCondition() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleInclude(Axes.SPHERE, "sphere.animation")
+            .toggleInclude(Axes.GENRE, "genre.35").toggleInclude(Axes.GENRE, "genre.18")
+        val qs = ServerRefine.refineAll(sel, t, "movie", DiscoverQuery())
+        assertEquals(2, qs.size)
+        assertEquals(setOf(setOf(35, 16), setOf(18, 16)), qs.map { it.genresAll }.toSet())
+        assertTrue(qs.all { it.genres.isEmpty() })
+        assertEquals("16,35", qs.first { 35 in it.genresAll }.params("movie", 1, "en-US")["with_genres"])
+        // no genre chosen: plain animation as before
+        val plain = ServerRefine.refineAll(Selection().toggleInclude(Axes.SPHERE, "sphere.animation"), t, "movie", DiscoverQuery()).single()
+        assertEquals(setOf(16), plain.genres); assertTrue(plain.genresAll.isEmpty())
+        // too many genres: falls back to plain animation (superset, the engine re-checks)
+        var many = Selection().toggleInclude(Axes.SPHERE, "sphere.animation")
+        for (g in listOf(35, 18, 80, 14, 878)) many = many.toggleInclude(Axes.GENRE, "genre.$g")
+        assertEquals(setOf(16), ServerRefine.refineAll(many, t, "movie", DiscoverQuery()).single().genres)
+    }
+
     @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {
         assertFalse(AdPolicy.allowed(AdPlacement.HOME_BANNER, userIsFiltering = true))
         assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = false))

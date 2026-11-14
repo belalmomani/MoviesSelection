@@ -31,6 +31,6 @@ object GemFinder {
         return v / (v + priorVotes) * avg + priorVotes / (v + priorVotes) * priorMean
     }
 
-    fun isGem(avg: Double, votes: Int, minAvg: Double = 7.2, minVotes: Int = 1500, maxVotes: Int = 20000): Boolean =
+    fun isGem(avg: Double, votes: Int, minAvg: Double = 7.0, minVotes: Int = 1500, maxVotes: Int = 20000): Boolean =
         avg >= minAvg && votes in minVotes..maxVotes
 }

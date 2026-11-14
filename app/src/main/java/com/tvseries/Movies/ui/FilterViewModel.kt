@@ -16,6 +16,8 @@ import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.ContentType
 import com.tvseries.Movies.data.PoolSnapshot
 import com.tvseries.Movies.data.ServerRefine
+import com.tvseries.Movies.data.TaxonomySeed
+import com.tvseries.Movies.data.Spheres
 import com.tvseries.Movies.data.TmdbError
 import com.tvseries.Movies.data.WorkPool
 import com.tvseries.Movies.data.Regions
@@ -28,6 +30,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -41,6 +44,14 @@ data class FilterUi(
     val suggestions: List<AxisSuggestion>,
     val poolComplete: Boolean,
 )
+
+/**
+ * How many titles TMDB itself reports for the conditions that were sent to it (from total_results).
+ * [exact] = a single query per media (no overlap between queries, no Wikidata additions);
+ * [partial] = some conditions are only checked on the device, so the real number is lower;
+ * [capped] = TMDB stops reporting at 10,000.
+ */
+data class ServerCount(val total: Int, val exact: Boolean, val partial: Boolean, val capped: Boolean)
 
 class FilterViewModel(app: Application) : AndroidViewModel(app) {
     private val c = (app as MoviesApp).container
@@ -63,6 +74,19 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<TmdbError?>(null)
     val error: StateFlow<TmdbError?> = _error.asStateFlow()
 
+    private val _serverCount = MutableStateFlow<ServerCount?>(null)
+    val serverCount: StateFlow<ServerCount?> = _serverCount.asStateFlow()
+
+    /** total_results reported by TMDB per discover query (key = media + query signature). */
+    private val serverTotals = HashMap<String, Int>()
+    private var pendingRefine = false
+
+    /** TMDB totals for "current selection + this one value" of the question on screen (value id -> titles). */
+    private val _probe = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val probe: StateFlow<Map<String, Int>> = _probe.asStateFlow()
+    private var probeJob: Job? = null
+    private var probeKey = ""
+
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
@@ -77,8 +101,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     /** Replaces the current selection (saved filter / preset) and loads matching titles. */
     fun loadSelection(sel: Selection) {
         _state.value = FilterState().apply(sel)
-        persistAndRefresh()
-        loadMore(refine = true)
+        persistAndRefresh() // starts the TMDB-side load itself when the selection has server-filterable conditions
     }
 
     /** The global all / movies / series choice changed. */
@@ -160,8 +183,19 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         _notice.value = null
         c.prefs.saveSelection(_state.value.selection)
         recompute()
+        _serverCount.value = null
+        probeJob?.cancel()
+        probeKey = ""
+        _probe.value = emptyMap()
+        val sel = _state.value.selection
+        // Ask TMDB for titles that really match the server-filterable conditions as soon as the selection changes.
+        if (ServerRefine.canRefine(sel) && autoRefined.add(sel.toString())) {
+            loadMore(refine = true)
+            return
+        }
+        publishServerCount(sel) // already refined before (e.g. the user stepped back): totals are cached
         val base = c.repo.baseQuery().signature()
-        if (mediaTypes(_state.value.selection).any { pool.stream(it, base).nextPage == 1 }) loadMore(refine = false)
+        if (mediaTypes(sel).any { pool.stream(it, base).nextPage == 1 }) loadMore(refine = false)
     }
 
     /** Which TMDB endpoints are needed for the current type selection. */
@@ -178,15 +212,18 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         return if (type == ContentType.ALL) base else base.filter { it == type }.ifEmpty { listOf(type) }
     }
 
-    private fun isMappable(sel: Selection): Boolean =
-        listOf(Axes.SPHERE, Axes.GENRE, Axes.LANGUAGE, Axes.COUNTRY, Axes.YEAR, Axes.RATING).any { sel.include[it]?.isNotEmpty() == true }
+    private fun isMappable(sel: Selection): Boolean = ServerRefine.canRefine(sel)
 
     /** Loads more titles from TMDB. [refine] = ask TMDB for titles matching the server-filterable conditions. */
     fun loadMore(refine: Boolean) {
-        if (_loading.value) return
+        if (_loading.value) {
+            if (refine) pendingRefine = true // selection changed while loading: refine again when this load ends
+            return
+        }
         viewModelScope.launch {
             _loading.value = true
             _error.value = null
+            val startSel = _state.value.selection
             try {
                 val sel = _state.value.selection
                 val base = c.repo.baseQuery()
@@ -211,6 +248,7 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
                         while (pages < pagesEach && s.hasMore) {
                             val page = c.repo.discover(media, s.nextPage, q)
                             pool.addListItems(media, page.results, q.countries.singleOrNull())
+                            if (refine) serverTotals["$media|${q.signature()}"] = page.totalResults
                             s.nextPage += 1
                             s.totalPages = page.totalPages
                             pages++
@@ -223,8 +261,111 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
                 _loading.value = false
                 snapshot = pool.snapshot()
                 recompute()
+                if (refine && _state.value.selection == startSel) publishServerCount(startSel)
+                if (pendingRefine) {
+                    pendingRefine = false
+                    loadMore(refine = true)
+                }
             }
         }
+    }
+
+    /**
+     * Values the TMDB side can answer for [axis] that the loaded sample may not contain at all
+     * (a genre / decade / sphere nobody loaded yet). Only values that exist in the taxonomy and are not
+     * already shown, selected or excluded.
+     */
+    fun extraCandidates(axis: String, shown: Set<String>): List<String> {
+        val sel = _state.value.selection
+        val all: List<String> = when (axis) {
+            Axes.GENRE -> (TaxonomySeed.movieGenreIds + TaxonomySeed.tvGenreIds).sorted().map { "genre.$it" }
+            Axes.SPHERE -> listOf(Spheres.ARAB, Spheres.EAST_ASIA, Spheres.WESTERN, Spheres.OTHER, Spheres.ANIMATION)
+            Axes.YEAR -> (1930..2020 step 10).reversed().map { "decade.$it" }
+            Axes.RATING -> (5..9).map { "rating.$it" }
+            else -> emptyList()
+        }
+        val tax = snapshot.taxonomy
+        return all.filter { it !in shown && tax.contains(it) && !sel.isIncluded(axis, it) && !sel.isExcluded(axis, it) }
+    }
+
+    /**
+     * Asks TMDB how many titles each candidate value of the current question would leave (one light request
+     * per value, 3 at a time, cached). Results arrive one by one in [probe]. Nothing is added to the loaded pool.
+     */
+    fun probe(axis: String, values: List<String>) {
+        val sel = _state.value.selection
+        if (_excludeMode.value || axis !in PROBE_AXES || values.isEmpty()) {
+            probeJob?.cancel()
+            probeKey = ""
+            _probe.value = emptyMap()
+            return
+        }
+        val key = sel.toString() + "|" + axis + "|" + values.joinToString(",")
+        if (key == probeKey) return
+        probeKey = key
+        probeJob?.cancel()
+        _probe.value = emptyMap()
+        probeJob = viewModelScope.launch {
+            val gate = Semaphore(PROBE_PARALLEL)
+            coroutineScope {
+                for (v in values) {
+                    if (sel.isIncluded(axis, v)) continue
+                    launch {
+                        gate.withPermit {
+                            val next = sel.toggleInclude(axis, v)
+                            val total = totalFor(next) ?: return@withPermit
+                            // Arab titles also come from Wikidata, which TMDB's count does not include: a 0 proves nothing there.
+                            if (total == 0 && arabCountries(next).isNotEmpty()) return@withPermit
+                            _probe.update { it + (v to total) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** TMDB's count for [sel] (sum over the discover queries it needs); null if a request failed. */
+    private suspend fun totalFor(sel: Selection): Int? {
+        val base = c.repo.baseQuery()
+        var total = 0
+        for (media in mediaTypes(sel)) {
+            for (q in ServerRefine.refineAll(sel, snapshot.taxonomy, media, base)) {
+                val k = "$media|${q.signature()}"
+                val t = serverTotals[k] ?: try {
+                    c.repo.discover(media, 1, q).totalResults.also { serverTotals[k] = it }
+                } catch (e: TmdbError) {
+                    return null
+                }
+                total += t
+            }
+        }
+        return total
+    }
+
+    /** Builds the TMDB count for [sel] from the totals recorded for each of its discover queries (null while unknown). */
+    private fun publishServerCount(sel: Selection) {
+        if (!ServerRefine.canRefine(sel)) {
+            _serverCount.value = null
+            return
+        }
+        val base = c.repo.baseQuery()
+        var total = 0
+        var singleQueryPerMedia = true
+        var capped = false
+        var partial = false
+        val medias = mediaTypes(sel)
+        for (media in medias) {
+            val queries = ServerRefine.refineAll(sel, snapshot.taxonomy, media, base)
+            if (queries.size > 1) singleQueryPerMedia = false
+            for (q in queries) {
+                val t = serverTotals["$media|${q.signature()}"] ?: return // a query has not answered yet
+                if (t >= TMDB_TOTAL_CAP) capped = true
+                total += t
+            }
+            if (ServerRefine.hasClientOnlyConditions(sel, media)) partial = true
+        }
+        val exact = singleQueryPerMedia && arabCountries(sel).isEmpty()
+        _serverCount.value = ServerCount(total, exact, partial, capped)
     }
 
     private fun arabCountries(sel: Selection): Set<String> {
@@ -345,5 +486,8 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
         const val ENRICH_BATCH = 20
         const val AUTO_ENRICH_BATCH = 30
         const val AUTO_REFINE_BELOW = 12
+        const val TMDB_TOTAL_CAP = 10000
+        const val PROBE_PARALLEL = 3
+        val PROBE_AXES = setOf(Axes.GENRE, Axes.SPHERE, Axes.YEAR, Axes.RATING, Axes.COUNTRY, Axes.LANGUAGE)
     }
 }

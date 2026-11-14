@@ -310,8 +310,6 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
             coroutineScope {
                 for (v in values) {
                     if (sel.isIncluded(axis, v)) continue
-                    // The animation sphere replaces the genre condition in the TMDB query, so its count would be misleading here.
-                    if (v == Spheres.ANIMATION && sel.include[Axes.GENRE].orEmpty().isNotEmpty()) continue
                     launch {
                         gate.withPermit {
                             val next = sel.toggleInclude(axis, v)

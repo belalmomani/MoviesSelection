@@ -27,9 +27,11 @@ data class DiscoverQuery(
     val withoutKeywords: Set<Int> = emptySet(),
     /** TMDB TV status codes (0 returning, 1 planned, 2 in production, 3 ended, 4 canceled, 5 pilot). TV only. */
     val statuses: Set<Int> = emptySet(),
+    /** Genres that must ALL be present (TMDB comma = AND). [genres] is the OR group; use one or the other. */
+    val genresAll: Set<Int> = emptySet(),
 ) {
     fun signature(): String =
-        "g=${genres.sorted()};wg=${withoutGenres.sorted()};l=$language;c=${countries.sorted()};y=$yearFrom-$yearTo;r=$minRating;v=$minVotes-$maxVotes;k=${keywords.sorted()};a=$includeAdult;s=$sort;rt=$runtimeFrom-$runtimeTo;cs=${cast.sorted()};cr=${crew.sorted()};wk=${withoutKeywords.sorted()};st=${statuses.sorted()}"
+        "g=${genres.sorted()};wg=${withoutGenres.sorted()};l=$language;c=${countries.sorted()};y=$yearFrom-$yearTo;r=$minRating;v=$minVotes-$maxVotes;k=${keywords.sorted()};a=$includeAdult;s=$sort;rt=$runtimeFrom-$runtimeTo;cs=${cast.sorted()};cr=${crew.sorted()};wk=${withoutKeywords.sorted()};st=${statuses.sorted()};ga=${genresAll.sorted()}"
 
     fun params(media: String, page: Int, uiLanguage: String): Map<String, String> {
         val m = LinkedHashMap<String, String>()
@@ -38,7 +40,8 @@ data class DiscoverQuery(
         m["sort_by"] = sort
         m["include_adult"] = includeAdult.toString()
         m["vote_count.gte"] = minVotes.toString()
-        if (genres.isNotEmpty()) m["with_genres"] = genres.sorted().joinToString("|")
+        if (genresAll.isNotEmpty()) m["with_genres"] = genresAll.sorted().joinToString(",")
+        else if (genres.isNotEmpty()) m["with_genres"] = genres.sorted().joinToString("|")
         if (withoutGenres.isNotEmpty()) m["without_genres"] = withoutGenres.sorted().joinToString(",")
         language?.let { m["with_original_language"] = it }
         if (countries.isNotEmpty()) m["with_origin_country"] = countries.sorted().joinToString("|")
@@ -75,15 +78,25 @@ object ServerRefine {
     private fun lowVotesForArabic(q: DiscoverQuery): DiscoverQuery =
         if (q.language == "ar" || q.countries.any { it in arabSet }) q.copy(minVotes = minOf(q.minVotes, 5)) else q
 
-    /** Applies a production sphere to a query; null when the sphere cannot match the other conditions. */
-    private fun applySphere(sphere: String, q: DiscoverQuery): DiscoverQuery? {
-        if (sphere == Spheres.ANIMATION) return q.copy(genres = setOf(16))
-        val wanted = Spheres.countriesOf(sphere) ?: return null
+    /**
+     * Applies a production sphere to a query; empty when the sphere cannot match the other conditions.
+     * Animation is a genre (16): a chosen genre must be combined with it (AND), so each chosen genre becomes its own
+     * query "genre AND animation" (at most [MAX_ANIMATION_GENRES]; beyond that plain animation, a superset the engine re-checks).
+     */
+    private fun applySphere(sphere: String, q: DiscoverQuery): List<DiscoverQuery> {
+        if (sphere == Spheres.ANIMATION) {
+            val chosen = q.genres - 16
+            if (chosen.isEmpty() || chosen.size > MAX_ANIMATION_GENRES) return listOf(q.copy(genres = setOf(16)))
+            return chosen.sorted().map { q.copy(genres = emptySet(), genresAll = setOf(it, 16)) }
+        }
+        val wanted = Spheres.countriesOf(sphere) ?: return emptyList()
         val c = if (q.countries.isEmpty()) wanted else q.countries.intersect(wanted)
-        if (c.isEmpty()) return null
+        if (c.isEmpty()) return emptyList()
         // animation is its own sphere, so the other spheres never include it
-        return q.copy(countries = c, withoutGenres = q.withoutGenres + 16)
+        return listOf(q.copy(countries = c, withoutGenres = q.withoutGenres + 16))
     }
+
+    private const val MAX_ANIMATION_GENRES = 4
 
     /**
      * One or more discover queries for the selection. A chosen production sphere (Arab / East Asia / Western /
@@ -95,7 +108,7 @@ object ServerRefine {
         if (spheres.isNotEmpty()) {
             val without = sel.copy(include = sel.include - Axes.SPHERE)
             val b = refine(without, taxonomy, media, base) ?: return emptyList()
-            return spheres.mapNotNull { sp -> applySphere(sp, b)?.let { lowVotesForArabic(it) to sp } }
+            return spheres.flatMap { sp -> applySphere(sp, b).map { lowVotesForArabic(it) to sp } }
                 .flatMap { (q, sp) -> if (sp == Spheres.WESTERN || sp == Spheres.OTHER) listOf(q) else expand(q) }
                 .distinctBy { it.signature() }
         }

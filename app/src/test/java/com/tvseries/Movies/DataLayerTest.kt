@@ -24,6 +24,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -313,6 +314,123 @@ class DataLayerTest {
         val tvOnly = Selection().toggleInclude(Axes.GENRE, "genre.10762")
         assertNull(ServerRefine.refine(tvOnly, t, "movie", DiscoverQuery()))
         assertNotNull(ServerRefine.refine(tvOnly, t, "tv", DiscoverQuery()))
+    }
+
+    @Test fun excludedLongFilmsBecomeARuntimeWindowForMoviesOnly() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleExclude(Axes.RUNTIME, "runtime.m.120_150").toggleExclude(Axes.RUNTIME, "runtime.m.o150")
+        val movie = ServerRefine.refine(sel, t, "movie", DiscoverQuery())!!
+        assertNull(movie.runtimeFrom); assertEquals(119, movie.runtimeTo)
+        val tv = ServerRefine.refine(sel, t, "tv", DiscoverQuery())!!
+        assertNull(tv.runtimeFrom); assertNull(tv.runtimeTo) // film bands say nothing about episodes
+        val mid = ServerRefine.refine(Selection().toggleInclude(Axes.RUNTIME, "runtime.m.90_120"), t, "movie", DiscoverQuery())!!
+        assertEquals(90, mid.runtimeFrom); assertEquals(119, mid.runtimeTo)
+        val long = ServerRefine.refine(Selection().toggleInclude(Axes.RUNTIME, "runtime.m.o150"), t, "movie", DiscoverQuery())!!
+        assertEquals(150, long.runtimeFrom); assertNull(long.runtimeTo)
+        val p = mid.params("movie", 1, "en-US")
+        assertEquals("90", p["with_runtime.gte"]); assertEquals("119", p["with_runtime.lte"])
+    }
+
+    @Test fun excludedGenresKeywordsAndIncludedKeywordsAreSent() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleExclude(Axes.GENRE, "genre.27").toggleInclude(Axes.KEYWORD, "keyword.11")
+            .toggleExclude(Axes.KEYWORD, "keyword.99")
+        val q = ServerRefine.refine(sel, t, "movie", DiscoverQuery())!!
+        assertTrue(27 in q.withoutGenres)
+        assertEquals(setOf(11), q.keywords)
+        assertEquals(setOf(99), q.withoutKeywords)
+        val p = q.params("movie", 1, "en-US")
+        assertEquals("27", p["without_genres"]); assertEquals("11", p["with_keywords"]); assertEquals("99", p["without_keywords"])
+    }
+
+    @Test fun severalYearsAndLanguagesAreCoveredNotDropped() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val years = Selection().toggleInclude(Axes.YEAR, "decade.1990").toggleInclude(Axes.YEAR, "year.2015")
+        val q = ServerRefine.refine(years, t, "movie", DiscoverQuery())!!
+        assertEquals(1990, q.yearFrom); assertEquals(2015, q.yearTo)
+        val langs = Selection().toggleInclude(Axes.LANGUAGE, "language.ko").toggleInclude(Axes.LANGUAGE, "language.ja")
+        val qs = ServerRefine.refineAll(langs, t, "tv", DiscoverQuery(minVotes = 100))
+        assertEquals(setOf("ja", "ko"), qs.map { it.language }.toSet())
+        assertEquals(2, qs.size)
+    }
+
+    @Test fun peopleOnlyFilmsAndStatusOnlyTv() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleInclude(Axes.CAST, "cast.31").toggleInclude(Axes.DIRECTOR, "director.525")
+            .toggleInclude(Axes.STATUS, "status.ended")
+        val movie = ServerRefine.refine(sel, t, "movie", DiscoverQuery())!!
+        assertEquals(setOf(31), movie.cast); assertEquals(setOf(525), movie.crew); assertTrue(movie.statuses.isEmpty())
+        val mp = movie.params("movie", 1, "en-US")
+        assertEquals("31", mp["with_cast"]); assertEquals("525", mp["with_crew"]); assertFalse(mp.containsKey("with_status"))
+        val tv = ServerRefine.refine(sel, t, "tv", DiscoverQuery())!!
+        assertTrue(tv.cast.isEmpty()); assertEquals(setOf(3), tv.statuses)
+        val tp = tv.params("tv", 1, "en-US")
+        assertEquals("3", tp["with_status"]); assertFalse(tp.containsKey("with_cast"))
+        // a film-only status must not narrow TV
+        val released = ServerRefine.refine(Selection().toggleInclude(Axes.STATUS, "status.released"), t, "tv", DiscoverQuery())!!
+        assertTrue(released.statuses.isEmpty())
+    }
+
+    @Test fun canRefineAndClientOnlyDetection() {
+        assertFalse(ServerRefine.canRefine(Selection()))
+        assertFalse(ServerRefine.canRefine(Selection().toggleInclude(Axes.MOOD, "mood.laugh")))
+        assertTrue(ServerRefine.canRefine(Selection().toggleExclude(Axes.GENRE, "genre.27")))
+        assertTrue(ServerRefine.canRefine(Selection().toggleInclude(Axes.RUNTIME, "runtime.m.u90")))
+        val onlyServer = Selection().toggleInclude(Axes.GENRE, "genre.35").toggleInclude(Axes.FORMAT, "format.movie")
+        assertFalse(ServerRefine.hasClientOnlyConditions(onlyServer, "movie"))
+        assertTrue(ServerRefine.hasClientOnlyConditions(onlyServer.toggleInclude(Axes.MOOD, "mood.laugh"), "movie"))
+        assertTrue(ServerRefine.hasClientOnlyConditions(Selection().toggleInclude(Axes.CAST, "cast.1"), "tv"))
+        assertFalse(ServerRefine.hasClientOnlyConditions(Selection().toggleInclude(Axes.CAST, "cast.1"), "movie"))
+    }
+
+    @Test fun newQueryFieldsChangeTheSignature() {
+        val a = DiscoverQuery()
+        assertNotEquals(a.signature(), a.copy(runtimeTo = 100).signature())
+        assertNotEquals(a.signature(), a.copy(cast = setOf(1)).signature())
+        assertNotEquals(a.signature(), a.copy(withoutKeywords = setOf(2)).signature())
+        assertNotEquals(a.signature(), a.copy(statuses = setOf(3)).signature())
+    }
+
+    @Test fun probeStyleSelectionsBecomeOneQueryPerMedia() {
+        // The question probe adds ONE candidate value to the current selection and asks TMDB for its total.
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val base = Selection().toggleInclude(Axes.GENRE, "genre.35")
+        for (v in listOf("sphere.animation" to Axes.SPHERE, "decade.1990" to Axes.YEAR, "rating.8" to Axes.RATING, "country.JP" to Axes.COUNTRY)) {
+            val next = base.toggleInclude(v.second, v.first)
+            for (media in listOf("movie", "tv")) {
+                val qs = ServerRefine.refineAll(next, t, media, DiscoverQuery(minVotes = 100))
+                assertEquals("${v.first} $media", 1, qs.size)
+            }
+        }
+        // a genre that exists only for TV leaves no movie query: its movie total is 0
+        val tvOnly = base.toggleInclude(Axes.GENRE, "genre.10762")
+        assertEquals(1, ServerRefine.refineAll(tvOnly, t, "tv", DiscoverQuery()).size)
+    }
+
+    @Test fun everyProbeCandidateExistsInTheTaxonomy() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val ids = (TaxonomySeed.movieGenreIds + TaxonomySeed.tvGenreIds).map { "genre.$it" } +
+            (1930..2020 step 10).map { "decade.$it" } + (5..9).map { "rating.$it" } +
+            listOf("sphere.arab", "sphere.east_asia", "sphere.western", "sphere.other", "sphere.animation")
+        for (id in ids) assertTrue("missing $id", t.contains(id))
+    }
+
+    @Test fun animationSphereKeepsTheChosenGenreAsAnAndCondition() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleInclude(Axes.SPHERE, "sphere.animation")
+            .toggleInclude(Axes.GENRE, "genre.35").toggleInclude(Axes.GENRE, "genre.18")
+        val qs = ServerRefine.refineAll(sel, t, "movie", DiscoverQuery())
+        assertEquals(2, qs.size)
+        assertEquals(setOf(setOf(35, 16), setOf(18, 16)), qs.map { it.genresAll }.toSet())
+        assertTrue(qs.all { it.genres.isEmpty() })
+        assertEquals("16,35", qs.first { 35 in it.genresAll }.params("movie", 1, "en-US")["with_genres"])
+        // no genre chosen: plain animation as before
+        val plain = ServerRefine.refineAll(Selection().toggleInclude(Axes.SPHERE, "sphere.animation"), t, "movie", DiscoverQuery()).single()
+        assertEquals(setOf(16), plain.genres); assertTrue(plain.genresAll.isEmpty())
+        // too many genres: falls back to plain animation (superset, the engine re-checks)
+        var many = Selection().toggleInclude(Axes.SPHERE, "sphere.animation")
+        for (g in listOf(35, 18, 80, 14, 878)) many = many.toggleInclude(Axes.GENRE, "genre.$g")
+        assertEquals(setOf(16), ServerRefine.refineAll(many, t, "movie", DiscoverQuery()).single().genres)
     }
 
     @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {
