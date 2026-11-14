@@ -1,0 +1,524 @@
+package com.tvseries.Movies
+
+import com.tvseries.Movies.ads.AdPlacement
+import com.tvseries.Movies.ads.AdPolicy
+import com.tvseries.Movies.ads.AdsModule
+import com.tvseries.Movies.core.Axes
+import com.tvseries.Movies.core.Selection
+import com.tvseries.Movies.core.Taxonomy
+import com.tvseries.Movies.data.DiscoverQuery
+import com.tvseries.Movies.data.ListItemDto
+import com.tvseries.Movies.data.MemoryStore
+import com.tvseries.Movies.data.PageDto
+import com.tvseries.Movies.data.Prefs
+import com.tvseries.Movies.data.ServerRefine
+import com.tvseries.Movies.data.TaxonomySeed
+import com.tvseries.Movies.data.TmdbClient
+import com.tvseries.Movies.data.TmdbError
+import com.tvseries.Movies.data.WorkCard
+import com.tvseries.Movies.data.WorkMapper
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DataLayerTest {
+    @Test fun seedTaxonomyIsValid() {
+        val issues = Taxonomy(TaxonomySeed.nodes()).validate()
+        assertTrue(issues.toString(), issues.isEmpty())
+    }
+
+    @Test fun prefsPersistAndRestore() {
+        val store = MemoryStore()
+        val p1 = Prefs(store)
+        p1.setLanguage("en"); p1.setTheme("dark"); p1.setShowAdult(true); p1.setMinVotes(500)
+        p1.setHistoryEnabled(true); p1.addHistory("matrix")
+        p1.toggleFavorite(WorkCard("movie", 603, "The Matrix", year = "1999"))
+        p1.toggleWatchlist(WorkCard("tv", 1396, "Breaking Bad"))
+        val sel = Selection().toggleInclude(Axes.GENRE, "genre.28").toggleExclude(Axes.COUNTRY, "country.US")
+        p1.saveSelection(sel)
+
+        val p2 = Prefs(store) // fresh instance over the same storage = app restart
+        assertEquals("en", p2.language.value)
+        assertEquals("dark", p2.theme.value)
+        assertTrue(p2.showAdult.value)
+        assertEquals(500, p2.minVotes.value)
+        assertEquals(listOf("matrix"), p2.history.value)
+        assertEquals("movie:603", p2.favorites.value.single().key)
+        assertEquals("tv:1396", p2.watchlist.value.single().key)
+        assertEquals(sel, p2.loadSelection())
+    }
+
+    @Test fun intentAndTastePersist() {
+        val store = MemoryStore()
+        val p1 = Prefs(store)
+        val intent = com.tvseries.Movies.core.UserIntent(0.5, null, -0.3, Selection().toggleExclude(Axes.AVOID, "avoid.gore"))
+        p1.setIntent(intent)
+        p1.setTaste(com.tvseries.Movies.core.TasteProfile().update(listOf(35), "movie:9", true, emptySet()))
+        val p2 = Prefs(store)
+        assertEquals(intent, p2.intent.value)
+        assertEquals(listOf("movie:9"), p2.taste.value.accepted)
+        assertEquals(1.0, p2.taste.value.genre[35]!!, 1e-9)
+    }
+
+    @Test fun savedFiltersAndWatchedPersist() {
+        val store = MemoryStore()
+        val p1 = Prefs(store)
+        val sel = Selection().toggleInclude(Axes.GENRE, "genre.35")
+        p1.saveFilter("ليلة الجمعة", sel)
+        p1.toggleWatched("movie:1")
+        assertTrue(p1.hideWatched.value) // default on
+        val p2 = Prefs(store)
+        assertEquals(sel, p2.savedFilters.value.single().selection)
+        assertEquals("ليلة الجمعة", p2.savedFilters.value.single().name)
+        assertTrue("movie:1" in p2.watched.value)
+        p2.deleteFilter("ليلة الجمعة")
+        assertTrue(Prefs(store).savedFilters.value.isEmpty())
+    }
+
+    @Test fun arabSelectionSplitsIntoCountryQueriesWithLowVoteThreshold() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleInclude(Axes.COUNTRY, "region.arab")
+        val qs = ServerRefine.refineAll(sel, t, "tv", DiscoverQuery(minVotes = 100))
+        assertTrue(qs.size > 2)
+        assertTrue(qs.all { it.minVotes <= 5 })
+        assertTrue(qs.any { it.language == "ar" && it.countries.isEmpty() })
+        assertTrue(qs.filter { it.countries.isNotEmpty() }.all { it.countries.size == 1 })
+        // a non-Arab selection keeps the normal vote threshold
+        val kr = ServerRefine.refineAll(Selection().toggleInclude(Axes.COUNTRY, "country.KR"), t, "tv", DiscoverQuery(minVotes = 100))
+        assertEquals(100, kr.single().minVotes)
+    }
+
+    @Test fun countryStampedWhenQueryHasSingleCountry() {
+        val pool = com.tvseries.Movies.data.WorkPool()
+        pool.addListItems("movie", listOf(ListItemDto(id = 7, title = "x", genreIds = listOf(18))), "JO")
+        val w = pool.snapshot().works.single()
+        assertTrue("country.JO" in w.facets[Axes.COUNTRY]!!)
+        assertTrue("region.arab" in w.facets[Axes.COUNTRY]!!) // parent via hierarchy
+    }
+
+    @Test fun cinemaWorldsFromGenresAndKeywords() {
+        val w = com.tvseries.Movies.data.Worlds
+        assertTrue("world.crime_mystery.detective" in w.tags(listOf(80, 9648), null))
+        assertFalse("world.crime_mystery.underworld" in w.tags(listOf(80, 9648), null))
+        assertTrue("world.future_sf.time_travel" in w.tags(listOf(878), listOf("Time Travel")))
+        assertFalse("world.future_sf.time_travel" in w.tags(listOf(878), null)) // unknown keywords -> not tagged
+        val work = WorkMapper.fromListItem("movie", ListItemDto(id = 1, title = "x", genreIds = listOf(35, 10749))).work
+        assertTrue("world.comedy_light.romcom" in work.facets[Axes.WORLD]!!)
+        val t = Taxonomy(TaxonomySeed.nodes())
+        assertTrue("world.comedy_light" in t.closure(setOf("world.comedy_light.romcom")))
+    }
+
+    @Test fun trailerPickPrefersOfficialYoutubeTrailer() {
+        fun v(key: String, site: String, type: String, name: String, official: Boolean) =
+            com.tvseries.Movies.data.VideoDto(key, site, type, name, official)
+        val list = listOf(
+            v("a", "Vimeo", "Trailer", "x", true),
+            v("b", "YouTube", "Teaser", "x", true),
+            v("c", "YouTube", "Trailer", "x", false),
+            v("d", "YouTube", "Trailer", "x", true),
+        )
+        assertEquals("d", com.tvseries.Movies.data.Trailers.pick(list)!!.key)
+        assertEquals("c", com.tvseries.Movies.data.Trailers.pick(list.filter { it.key != "d" })!!.key)
+        assertEquals("b", com.tvseries.Movies.data.Trailers.pick(list.filter { it.key == "b" || it.key == "a" })!!.key)
+        assertNull(com.tvseries.Movies.data.Trailers.pick(list.filter { it.key == "a" }))
+    }
+
+    @Test fun clearUserDataErasesEverythingTheUserCreated() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        p.setLanguage("en")
+        p.toggleFavorite(WorkCard("movie", 1, "A"))
+        p.toggleWatchlist(WorkCard("tv", 2, "B"))
+        p.toggleWatched("movie:1")
+        p.saveFilter("x", Selection().toggleInclude(Axes.GENRE, "genre.35"))
+        p.setTaste(com.tvseries.Movies.core.TasteProfile().update(listOf(35), "movie:1", true, emptySet()))
+        p.clearUserData()
+        val again = Prefs(store)
+        assertTrue(again.favorites.value.isEmpty() && again.watchlist.value.isEmpty() && again.watched.value.isEmpty())
+        assertTrue(again.savedFilters.value.isEmpty() && again.taste.value.accepted.isEmpty())
+        assertEquals("en", again.language.value) // settings are kept
+    }
+
+    @Test fun finalStageNarrowsAndAdvances() {
+        val f = com.tvseries.Movies.core.FinalStage
+        val keys = listOf("a", "b", "c", "d", "e", "f")
+        assertEquals(keys, f.narrow(keys, emptySet()))
+        assertEquals(listOf("b", "d"), f.narrow(keys, setOf("b", "d")))
+        assertEquals(com.tvseries.Movies.core.Stage.HEROES, f.next(10, null))
+        assertEquals(com.tvseries.Movies.core.Stage.GENRES, f.next(5, com.tvseries.Movies.core.Stage.HEROES))
+        assertEquals(com.tvseries.Movies.core.Stage.STORY, f.next(4, com.tvseries.Movies.core.Stage.GENRES))
+        assertEquals(com.tvseries.Movies.core.Stage.DUEL, f.next(2, com.tvseries.Movies.core.Stage.STORY))
+        assertEquals(com.tvseries.Movies.core.Stage.WINNER, f.next(1, com.tvseries.Movies.core.Stage.STORY))
+        assertEquals(com.tvseries.Movies.core.Stage.DUEL, f.next(2, null))
+    }
+
+    @Test fun updateCheckFindsNewerBuildAndReportsMissingRelease() = runBlocking {
+        val s = MockWebServer()
+        s.enqueue(MockResponse().setBody("""{"tag_name":"build-12","assets":[{"name":"MoviesSelection.apk","url":"https://api/x","browser_download_url":"https://dl/x.apk"}]}"""))
+        s.start()
+        val uc = com.tvseries.Movies.data.UpdateClient(OkHttpClient(), "o/r", { "" }, s.url("/").toString())
+        val info = uc.latest()!!
+        val u = com.tvseries.Movies.data.Updates
+        assertEquals(12, info.build)
+        assertTrue(u.isNewer(info.build, 11))
+        assertFalse(u.isNewer(info.build, 12))
+        assertTrue(s.takeRequest().path!!.endsWith("/repos/o/r/releases/latest"))
+        s.enqueue(MockResponse().setResponseCode(404))
+        try {
+            uc.latest()
+            error("expected failure")
+        } catch (e: com.tvseries.Movies.data.UpdateException) {
+            assertEquals(com.tvseries.Movies.data.UpdateException.Kind.NOT_FOUND, e.kind)
+        }
+        s.shutdown()
+    }
+
+    @Test fun discoverQueryCarriesResolvedKeywordIds() {
+        val q = DiscoverQuery(keywords = setOf(5, 3), genres = setOf(37), yearFrom = 1930, yearTo = 1959)
+        val p = q.params("movie", 1, "ar")
+        assertEquals("3|5", p["with_keywords"])
+        assertEquals("37", p["with_genres"])
+        assertEquals("1930-01-01", p["primary_release_date.gte"])
+        assertFalse(DiscoverQuery().params("tv", 1, "ar").containsKey("with_keywords"))
+    }
+
+    @Test fun contentTypeKeepsOnlyTheChosenKind() {
+        val ct = com.tvseries.Movies.data.ContentType
+        assertTrue(ct.allows("all", "movie:1") && ct.allows("all", "tv:2"))
+        assertTrue(ct.allows("tv", "tv:2") && !ct.allows("tv", "movie:1"))
+        assertTrue(ct.allows("movie", "movie") && !ct.allows("movie", "tv"))
+        val p = Prefs(MemoryStore())
+        assertEquals("all", p.contentType.value)
+        p.setContentType("tv")
+        assertEquals("tv", p.contentType.value)
+    }
+
+    @Test fun timeGateSettingsDefaultsAndPersistence() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        assertFalse(p.gateLite.value)       // full experience by default
+        assertTrue(p.holeAuto.value)        // black hole may open by itself
+        assertFalse(p.skipIntro.value)
+        assertEquals(1f, p.gateSpeed.value, 1e-6f)
+        p.setGateLite(true); p.setHoleAuto(false); p.setSkipIntro(true); p.setGateSpeed(2f)
+        val again = Prefs(store)
+        assertTrue(again.gateLite.value)
+        assertFalse(again.holeAuto.value)
+        assertTrue(again.skipIntro.value)
+        assertEquals(2f, again.gateSpeed.value, 1e-6f)
+        again.clearUserData()               // erasing personal data keeps these settings
+        assertTrue(Prefs(store).gateLite.value)
+    }
+
+    @Test fun tvEditionIsAutomaticByDefaultAndCanBeForced() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        assertEquals("auto", p.tvMode.value)
+        p.setTvMode("on")
+        assertEquals("on", Prefs(store).tvMode.value)
+        p.clearUserData() // personal-data erase keeps the edition choice
+        assertEquals("on", Prefs(store).tvMode.value)
+    }
+
+    @Test fun spheresSeparateWesternEastAsiaArabAndAnimation() {
+        val sp = com.tvseries.Movies.data.Spheres
+        assertEquals(sp.EAST_ASIA, sp.of("ja", null, listOf(18)))
+        assertEquals(sp.EAST_ASIA, sp.of("ko", listOf("KR"), listOf(18)))
+        assertEquals(sp.EAST_ASIA, sp.of("zh", null, null))
+        assertEquals(sp.ANIMATION, sp.of("ja", listOf("JP"), listOf(16, 14)))   // anime belongs to animation only
+        assertEquals(sp.ANIMATION, sp.of("en", listOf("US"), listOf(16)))
+        assertEquals(sp.ARAB, sp.of("ar", null, listOf(18)))
+        assertEquals(sp.ARAB, sp.of("fr", listOf("MA"), listOf(18)))            // production in an Arab country
+        assertEquals(sp.WESTERN, sp.of("en", listOf("US", "GB"), listOf(28)))
+        assertEquals(sp.WESTERN, sp.of("fr", null, listOf(35)))                 // language fallback when no country yet
+        assertEquals(sp.OTHER, sp.of("tr", listOf("TR"), listOf(18)))
+        assertNull(sp.of(null, null, listOf(18)))                               // unknown stays unknown
+        val kr = WorkMapper.fromListItem("tv", ListItemDto(id = 1, name = "x", originalLanguage = "ko", genreIds = listOf(18))).work
+        assertEquals(setOf("sphere.east_asia"), kr.facets[Axes.SPHERE])
+        val anime = WorkMapper.fromListItem("tv", ListItemDto(id = 2, name = "y", originalLanguage = "ja", genreIds = listOf(16))).work
+        assertEquals(setOf("sphere.animation"), anime.facets[Axes.SPHERE])
+    }
+
+    @Test fun sphereQueriesKeepAnimationSeparateAndGroupEastAsia() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        fun sel(sp: String) = Selection().toggleInclude(Axes.SPHERE, sp)
+        val ea = ServerRefine.refineAll(sel("sphere.east_asia"), t, "tv", DiscoverQuery())
+        assertEquals(setOf("KR", "JP", "CN", "HK", "TW", "MO"), ea.flatMap { it.countries }.toSet()) // together
+        assertTrue(ea.all { 16 in it.withoutGenres })                                                   // no animation inside
+        val west = ServerRefine.refineAll(sel("sphere.western"), t, "movie", DiscoverQuery())
+        assertEquals(1, west.size)
+        assertTrue("US" in west[0].countries && 16 in west[0].withoutGenres)
+        val anim = ServerRefine.refineAll(sel("sphere.animation"), t, "movie", DiscoverQuery())
+        assertEquals(setOf(16), anim.single().genres)
+        assertTrue(anim.single().withoutGenres.isEmpty())
+        val arab = ServerRefine.refineAll(sel("sphere.arab"), t, "tv", DiscoverQuery(minVotes = 100))
+        assertTrue(arab.size > 2 && arab.all { it.minVotes <= 5 })
+        assertEquals("16", DiscoverQuery(withoutGenres = setOf(16)).params("tv", 1, "ar")["without_genres"])
+    }
+
+    @Test fun adsConsentStartsUnsetAndIsRemembered() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        assertEquals("unset", p.adsConsent.value) // nothing ad-related may start before the user answers
+        p.setAdsConsent("no")
+        assertEquals("no", Prefs(store).adsConsent.value)
+        p.clearUserData() // erasing personal data does not silently re-grant or reset the consent choice
+        assertEquals("no", Prefs(store).adsConsent.value)
+    }
+
+    @Test fun historyIsOffByDefault() {
+        val p = Prefs(MemoryStore())
+        p.addHistory("something")
+        assertTrue(p.history.value.isEmpty())
+        assertFalse(p.historyEnabled.value)
+    }
+
+    @Test fun listItemMappingKeepsUnknownAsUnknown() {
+        val movie = WorkMapper.fromListItem(
+            "movie",
+            ListItemDto(id = 1, title = "M", releaseDate = "1999-03-31", genreIds = listOf(28), originalLanguage = "en", voteAverage = 8.2, voteCount = 5000),
+        ).work
+        assertNull(movie.facets[Axes.COUNTRY]) // TMDB list data has no country for movies -> unknown
+        assertEquals(setOf("genre.28"), movie.facets[Axes.GENRE])
+        assertEquals(setOf("year.1999"), movie.facets[Axes.YEAR])
+        assertEquals(setOf("rating.8"), movie.facets[Axes.RATING])
+        assertEquals(emptySet<String>(), movie.facets[Axes.SEASONS]) // not applicable to films
+
+        val tv = WorkMapper.fromListItem(
+            "tv",
+            ListItemDto(id = 2, name = "T", firstAirDate = "2016-01-01", genreIds = listOf(16), originalLanguage = "ja", originCountry = listOf("JP"), voteAverage = 3.0, voteCount = 2),
+        ).work
+        assertEquals(setOf("country.JP"), tv.facets[Axes.COUNTRY])
+        assertTrue("format.anime" in tv.facets[Axes.FORMAT]!!)
+        assertNull(tv.facets[Axes.RATING]) // too few votes -> unknown
+    }
+
+    @Test fun serverRefineBuildsDiscoverQuery() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleInclude(Axes.GENRE, "genre.27").toggleInclude(Axes.COUNTRY, "country.KR")
+            .toggleInclude(Axes.YEAR, "decade.2010").toggleInclude(Axes.RATING, "rating.7")
+        val q = ServerRefine.refine(sel, t, "movie", DiscoverQuery())!!
+        assertEquals(setOf(27), q.genres)
+        assertEquals(setOf("KR"), q.countries)
+        assertEquals(2010, q.yearFrom); assertEquals(2019, q.yearTo)
+        assertEquals(7, q.minRating)
+        // genre that only exists for TV cannot match movies
+        val tvOnly = Selection().toggleInclude(Axes.GENRE, "genre.10762")
+        assertNull(ServerRefine.refine(tvOnly, t, "movie", DiscoverQuery()))
+        assertNotNull(ServerRefine.refine(tvOnly, t, "tv", DiscoverQuery()))
+    }
+
+    @Test fun excludedLongFilmsBecomeARuntimeWindowForMoviesOnly() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleExclude(Axes.RUNTIME, "runtime.m.120_150").toggleExclude(Axes.RUNTIME, "runtime.m.o150")
+        val movie = ServerRefine.refine(sel, t, "movie", DiscoverQuery())!!
+        assertNull(movie.runtimeFrom); assertEquals(119, movie.runtimeTo)
+        val tv = ServerRefine.refine(sel, t, "tv", DiscoverQuery())!!
+        assertNull(tv.runtimeFrom); assertNull(tv.runtimeTo) // film bands say nothing about episodes
+        val mid = ServerRefine.refine(Selection().toggleInclude(Axes.RUNTIME, "runtime.m.90_120"), t, "movie", DiscoverQuery())!!
+        assertEquals(90, mid.runtimeFrom); assertEquals(119, mid.runtimeTo)
+        val long = ServerRefine.refine(Selection().toggleInclude(Axes.RUNTIME, "runtime.m.o150"), t, "movie", DiscoverQuery())!!
+        assertEquals(150, long.runtimeFrom); assertNull(long.runtimeTo)
+        val p = mid.params("movie", 1, "en-US")
+        assertEquals("90", p["with_runtime.gte"]); assertEquals("119", p["with_runtime.lte"])
+    }
+
+    @Test fun excludedGenresKeywordsAndIncludedKeywordsAreSent() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleExclude(Axes.GENRE, "genre.27").toggleInclude(Axes.KEYWORD, "keyword.11")
+            .toggleExclude(Axes.KEYWORD, "keyword.99")
+        val q = ServerRefine.refine(sel, t, "movie", DiscoverQuery())!!
+        assertTrue(27 in q.withoutGenres)
+        assertEquals(setOf(11), q.keywords)
+        assertEquals(setOf(99), q.withoutKeywords)
+        val p = q.params("movie", 1, "en-US")
+        assertEquals("27", p["without_genres"]); assertEquals("11", p["with_keywords"]); assertEquals("99", p["without_keywords"])
+    }
+
+    @Test fun severalYearsAndLanguagesAreCoveredNotDropped() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val years = Selection().toggleInclude(Axes.YEAR, "decade.1990").toggleInclude(Axes.YEAR, "year.2015")
+        val q = ServerRefine.refine(years, t, "movie", DiscoverQuery())!!
+        assertEquals(1990, q.yearFrom); assertEquals(2015, q.yearTo)
+        val langs = Selection().toggleInclude(Axes.LANGUAGE, "language.ko").toggleInclude(Axes.LANGUAGE, "language.ja")
+        val qs = ServerRefine.refineAll(langs, t, "tv", DiscoverQuery(minVotes = 100))
+        assertEquals(setOf("ja", "ko"), qs.map { it.language }.toSet())
+        assertEquals(2, qs.size)
+    }
+
+    @Test fun peopleOnlyFilmsAndStatusOnlyTv() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val sel = Selection().toggleInclude(Axes.CAST, "cast.31").toggleInclude(Axes.DIRECTOR, "director.525")
+            .toggleInclude(Axes.STATUS, "status.ended")
+        val movie = ServerRefine.refine(sel, t, "movie", DiscoverQuery())!!
+        assertEquals(setOf(31), movie.cast); assertEquals(setOf(525), movie.crew); assertTrue(movie.statuses.isEmpty())
+        val mp = movie.params("movie", 1, "en-US")
+        assertEquals("31", mp["with_cast"]); assertEquals("525", mp["with_crew"]); assertFalse(mp.containsKey("with_status"))
+        val tv = ServerRefine.refine(sel, t, "tv", DiscoverQuery())!!
+        assertTrue(tv.cast.isEmpty()); assertEquals(setOf(3), tv.statuses)
+        val tp = tv.params("tv", 1, "en-US")
+        assertEquals("3", tp["with_status"]); assertFalse(tp.containsKey("with_cast"))
+        // a film-only status must not narrow TV
+        val released = ServerRefine.refine(Selection().toggleInclude(Axes.STATUS, "status.released"), t, "tv", DiscoverQuery())!!
+        assertTrue(released.statuses.isEmpty())
+    }
+
+    @Test fun canRefineAndClientOnlyDetection() {
+        assertFalse(ServerRefine.canRefine(Selection()))
+        assertFalse(ServerRefine.canRefine(Selection().toggleInclude(Axes.MOOD, "mood.laugh")))
+        assertTrue(ServerRefine.canRefine(Selection().toggleExclude(Axes.GENRE, "genre.27")))
+        assertTrue(ServerRefine.canRefine(Selection().toggleInclude(Axes.RUNTIME, "runtime.m.u90")))
+        val onlyServer = Selection().toggleInclude(Axes.GENRE, "genre.35").toggleInclude(Axes.FORMAT, "format.movie")
+        assertFalse(ServerRefine.hasClientOnlyConditions(onlyServer, "movie"))
+        assertTrue(ServerRefine.hasClientOnlyConditions(onlyServer.toggleInclude(Axes.MOOD, "mood.laugh"), "movie"))
+        assertTrue(ServerRefine.hasClientOnlyConditions(Selection().toggleInclude(Axes.CAST, "cast.1"), "tv"))
+        assertFalse(ServerRefine.hasClientOnlyConditions(Selection().toggleInclude(Axes.CAST, "cast.1"), "movie"))
+    }
+
+    @Test fun newQueryFieldsChangeTheSignature() {
+        val a = DiscoverQuery()
+        assertNotEquals(a.signature(), a.copy(runtimeTo = 100).signature())
+        assertNotEquals(a.signature(), a.copy(cast = setOf(1)).signature())
+        assertNotEquals(a.signature(), a.copy(withoutKeywords = setOf(2)).signature())
+        assertNotEquals(a.signature(), a.copy(statuses = setOf(3)).signature())
+    }
+
+    @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {
+        assertFalse(AdPolicy.allowed(AdPlacement.HOME_BANNER, userIsFiltering = true))
+        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = false))
+        assertTrue(AdPolicy.allowed(AdPlacement.HOME_BANNER, userIsFiltering = false))
+        assertTrue(AdPolicy.allowed(AdPlacement.DETAILS_BANNER, userIsFiltering = false))
+    }
+
+    @Test fun moodTensionAndKeywordDerivedTags() {
+        val d = com.tvseries.Movies.data.DetailsDto(
+            id = 9, title = "T", genres = listOf(com.tvseries.Movies.data.GenreDto(35, "Comedy")), releaseDate = "2001-01-01",
+            keywords = com.tvseries.Movies.data.KeywordsDto(
+                keywords = listOf(
+                    com.tvseries.Movies.data.KeywordDto(1, "happy ending"),
+                    com.tvseries.Movies.data.KeywordDto(2, "High School"),
+                ),
+            ),
+        )
+        val w = WorkMapper.fromDetails("movie", d).work
+        assertEquals(setOf("mood.laugh"), w.facets[Axes.MOOD])
+        assertEquals(setOf("tension.low"), w.facets[Axes.TENSION])
+        assertEquals(setOf("ending.happy"), w.facets[Axes.ENDING])
+        assertEquals(setOf("avoid.school"), w.facets[Axes.AVOID])
+        // keywords known but none matches: ending stays UNKNOWN, avoid is known-empty
+        val plain = WorkMapper.fromDetails(
+            "movie",
+            d.copy(keywords = com.tvseries.Movies.data.KeywordsDto(keywords = listOf(com.tvseries.Movies.data.KeywordDto(3, "robot")))),
+        ).work
+        assertNull(plain.facets[Axes.ENDING])
+        assertEquals(emptySet<String>(), plain.facets[Axes.AVOID])
+        // list-level data has no keywords -> both unknown
+        val list = WorkMapper.fromListItem("movie", ListItemDto(id = 1, title = "x", genreIds = listOf(27, 53))).work
+        assertNull(list.facets[Axes.AVOID])
+        assertEquals(setOf("tension.high"), list.facets[Axes.TENSION])
+    }
+
+    @Test fun watchProvidersParse() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; coerceInputValues = true }
+        val d = json.decodeFromString(
+            com.tvseries.Movies.data.DetailsDto.serializer(),
+            """{"id":1,"title":"x","watch/providers":{"results":{"JO":{"link":"https://x","flatrate":[{"provider_name":"Netflix"}]}}}}""",
+        )
+        assertEquals("Netflix", d.watchProviders!!.results["JO"]!!.flatrate!!.single().name)
+    }
+
+    @Test fun avoidOptionsExcludeAndRestore() {
+        val opt = com.tvseries.Movies.ui.Presets.avoid.first { it.id == "no_long" }
+        val on = opt.toggle(Selection())
+        assertTrue(opt.isOn(on))
+        assertTrue(on.isExcluded(Axes.RUNTIME, "runtime.m.o150"))
+        assertTrue(opt.toggle(on).isEmpty)
+    }
+
+    // ---- TMDB client against a local mock server (no real network / key needed) ----
+
+    private fun client(server: MockWebServer, key: String = "k") =
+        TmdbClient(OkHttpClient(), { key }, server.url("/3/").toString())
+
+    @Test fun wikidataQueryAndParsing() = runBlocking {
+        val s = MockWebServer()
+        s.enqueue(MockResponse().setBody("""{"results":{"bindings":[{"tmdb":{"value":"123"}},{"tmdb":{"value":"456"}},{"tmdb":{"value":"abc"}}]}}"""))
+        s.start()
+        val wd = com.tvseries.Movies.data.WikidataClient(OkHttpClient(), s.url("/sparql").toString())
+        val ids = wd.tmdbIds("tv", setOf("EG", "JO"), 0, 20)
+        assertEquals(listOf(123, 456), ids)
+        val q = wd.buildQuery("tv", setOf("EG", "JO"), 40, 20)
+        assertTrue(q.contains("P4983") && q.contains("\"EG\" \"JO\"") && q.contains("OFFSET 40"))
+        assertTrue(wd.buildQuery("movie", setOf("EG"), 0, 5).contains("P4947"))
+        val req = s.takeRequest()
+        assertTrue(req.getHeader("User-Agent")!!.startsWith("MoviesSelection"))
+        s.enqueue(MockResponse().setResponseCode(500))
+        try {
+            wd.tmdbIds("tv", setOf("EG"), 0, 20)
+            error("expected failure")
+        } catch (e: com.tvseries.Movies.data.WikidataException) {
+            assertTrue(e.message!!.contains("500"))
+        }
+        s.shutdown()
+    }
+
+    @Test fun clientParsesPage() = runBlocking {
+        val s = MockWebServer()
+        s.enqueue(MockResponse().setBody("""{"page":1,"total_pages":3,"results":[{"id":5,"title":"X","genre_ids":[28],"unknown_field":1}]}"""))
+        s.start()
+        val page = client(s).get("discover/movie", mapOf("page" to "1"), PageDto.serializer())
+        assertEquals(3, page.totalPages)
+        assertEquals(5, page.results.single().id)
+        assertTrue(s.takeRequest().path!!.contains("api_key=k"))
+        s.shutdown()
+    }
+
+    @Test fun clientMapsErrors() = runBlocking {
+        suspend fun kind(code: Int, key: String = "k"): TmdbError.Kind {
+            val s = MockWebServer()
+            s.enqueue(MockResponse().setResponseCode(code).setBody("{}"))
+            if (code == 429) s.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "0").setBody("{}"))
+            s.start()
+            return try {
+                client(s, key).get("x", emptyMap(), PageDto.serializer())
+                error("expected failure")
+            } catch (e: TmdbError) {
+                e.kind
+            } finally {
+                s.shutdown()
+            }
+        }
+        assertEquals(TmdbError.Kind.UNAUTHORIZED, kind(401))
+        assertEquals(TmdbError.Kind.NOT_FOUND, kind(404))
+        assertEquals(TmdbError.Kind.SERVER, kind(500))
+        assertEquals(TmdbError.Kind.NO_KEY, kind(200, key = ""))
+    }
+
+    @Test fun clientReportsParseErrorsAndOffline() = runBlocking {
+        val s = MockWebServer()
+        s.enqueue(MockResponse().setBody("not json"))
+        s.start()
+        try {
+            client(s).get("x", emptyMap(), PageDto.serializer())
+            error("expected failure")
+        } catch (e: TmdbError) {
+            assertEquals(TmdbError.Kind.PARSE, e.kind)
+        }
+        val url = s.url("/3/").toString()
+        s.shutdown() // server gone -> connection refused
+        try {
+            TmdbClient(OkHttpClient(), { "k" }, url).get("x", emptyMap(), PageDto.serializer())
+            error("expected failure")
+        } catch (e: TmdbError) {
+            assertEquals(TmdbError.Kind.NETWORK, e.kind)
+        }
+    }
+}
