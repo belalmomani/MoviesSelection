@@ -91,6 +91,7 @@ fun FilterScreen(
     val skipped by vm.skipped.collectAsState()
     val notice by vm.notice.collectAsState()
     val serverCount by vm.serverCount.collectAsState()
+    val probe by vm.probe.collectAsState()
     val arabic = isArabic()
 
     val contentType by vm.contentType.collectAsState()
@@ -211,10 +212,15 @@ fun FilterScreen(
             if (questionAxis != null && questionView != null) {
                 item {
                     val def = tax.axes.first { it.id == questionAxis }
+                    val shownIds = displayValues(questionAxis, questionView).map { it.value }
+                    val extra = vm.extraCandidates(questionAxis, shownIds.toSet())
+                    val toProbe = shownIds.take(12).let { it + extra.take(20 - it.size) }
+                    LaunchedEffect(questionAxis, sel, excludeMode, toProbe) { vm.probe(questionAxis, toProbe) }
                     QuestionCard(
                         title = questionTitle(questionAxis, def.name(arabic)),
                         resultCount = u.result.matched.size,
                         axis = questionAxis, view = questionView, taxonomy = tax, arabic = arabic,
+                        extra = extra, probe = probe,
                         excludeMode = excludeMode,
                         onMode = { vm.setExcludeMode(it) },
                         onPick = { value -> vm.toggle(questionAxis, value) },
@@ -280,6 +286,24 @@ fun FilterScreen(
     }
 }
 
+/** The clearest level of a hierarchy: countries (not regions), decades (not single years) when possible. */
+private fun displayValues(axis: String, view: AxisView): List<FacetCount> {
+    var v = view.values
+    if (axis == Axes.COUNTRY) v = v.filter { !it.value.startsWith("region.") }.ifEmpty { view.values }
+    if (axis == Axes.YEAR) {
+        val decades = v.filter { it.value.startsWith("decade.") }
+        if (decades.size > 1) v = decades
+    }
+    return v
+}
+
+/** "≈N" when TMDB answered for this value, otherwise the count among the titles loaded on this device. */
+private fun countLabel(fc: FacetCount, probe: Map<String, Int>): String {
+    val t = probe[fc.value]
+    return if (t != null && !fc.selected && !fc.excluded) (if (t >= 10000) "≈10,000+" else "≈$t")
+    else (if (fc.selected || fc.excluded) fc.inResult else fc.afterInclude).toString()
+}
+
 @Composable
 private fun QuestionCard(
     title: String,
@@ -288,21 +312,21 @@ private fun QuestionCard(
     view: AxisView,
     taxonomy: Taxonomy,
     arabic: Boolean,
+    extra: List<String>,
+    probe: Map<String, Int>,
     excludeMode: Boolean,
     onMode: (Boolean) -> Unit,
     onPick: (String) -> Unit,
     onApplyMany: (Set<String>) -> Unit,
     onSkip: () -> Unit,
 ) {
-    // Show the clearest level of a hierarchy: countries (not regions), decades (not single years) when possible.
+    // Candidates that exist in TMDB but not in the loaded sample appear once TMDB confirms they have titles.
     val values: List<FacetCount> = run {
-        var v = view.values
-        if (axis == Axes.COUNTRY) v = v.filter { !it.value.startsWith("region.") }.ifEmpty { view.values }
-        if (axis == Axes.YEAR) {
-            val decades = v.filter { it.value.startsWith("decade.") }
-            if (decades.size > 1) v = decades
-        }
-        v
+        val shown = displayValues(axis, view)
+        val known = shown.map { it.value }.toSet()
+        val added = extra.filter { it !in known && (probe[it] ?: 0) > 0 }.map { FacetCount(it, 0, 0, false, false) }
+        // Values TMDB says have no titles cannot lead anywhere: hide them (never hide a selected / excluded one).
+        (shown + added).filter { fc -> fc.selected || fc.excluded || (probe[fc.value] ?: 1) > 0 }
     }
     var limit by remember(axis) { mutableStateOf(14) }
     var multi by remember(axis) { mutableStateOf(false) }
@@ -312,6 +336,12 @@ private fun QuestionCard(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(tr("$resultCount عمل متبقٍ", "$resultCount titles left"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(title, style = MaterialTheme.typography.titleLarge)
+            if (probe.isNotEmpty()) {
+                Text(
+                    tr("الرقم الذي يبدأ بـ ≈ هو عدد الأعمال في TMDB نفسه لهذا الخيار.", "A number starting with ≈ is how many titles TMDB itself has for that choice."),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 values.take(limit).forEach { fc ->
                     if (multi) {
@@ -320,9 +350,9 @@ private fun QuestionCard(
                         FilterChip(
                             selected = on,
                             onClick = { pending = if (on) pending - fc.value else pending + fc.value },
-                            label = { Text(name + " · " + fc.afterInclude) },
+                            label = { Text(name + " · " + countLabel(fc, probe)) },
                         )
-                    } else ValueChip(fc, taxonomy, arabic, onPick)
+                    } else ValueChip(fc, taxonomy, arabic, probe, onPick)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -354,9 +384,9 @@ private fun QuestionCard(
 }
 
 @Composable
-private fun ValueChip(fc: FacetCount, taxonomy: Taxonomy, arabic: Boolean, onPick: (String) -> Unit) {
+private fun ValueChip(fc: FacetCount, taxonomy: Taxonomy, arabic: Boolean, probe: Map<String, Int>, onPick: (String) -> Unit) {
     val name = taxonomy.node(fc.value)?.name(arabic) ?: fc.value
-    val count = if (fc.selected || fc.excluded) fc.inResult else fc.afterInclude
+    val count = countLabel(fc, probe)
     FilterChip(
         selected = fc.selected,
         onClick = { onPick(fc.value) },

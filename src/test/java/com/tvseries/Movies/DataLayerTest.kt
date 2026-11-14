@@ -391,6 +391,30 @@ class DataLayerTest {
         assertNotEquals(a.signature(), a.copy(statuses = setOf(3)).signature())
     }
 
+    @Test fun probeStyleSelectionsBecomeOneQueryPerMedia() {
+        // The question probe adds ONE candidate value to the current selection and asks TMDB for its total.
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val base = Selection().toggleInclude(Axes.GENRE, "genre.35")
+        for (v in listOf("sphere.animation" to Axes.SPHERE, "decade.1990" to Axes.YEAR, "rating.8" to Axes.RATING, "country.JP" to Axes.COUNTRY)) {
+            val next = base.toggleInclude(v.second, v.first)
+            for (media in listOf("movie", "tv")) {
+                val qs = ServerRefine.refineAll(next, t, media, DiscoverQuery(minVotes = 100))
+                assertEquals("${v.first} $media", 1, qs.size)
+            }
+        }
+        // a genre that exists only for TV leaves no movie query: its movie total is 0
+        val tvOnly = base.toggleInclude(Axes.GENRE, "genre.10762")
+        assertEquals(1, ServerRefine.refineAll(tvOnly, t, "tv", DiscoverQuery()).size)
+    }
+
+    @Test fun everyProbeCandidateExistsInTheTaxonomy() {
+        val t = Taxonomy(TaxonomySeed.nodes())
+        val ids = (TaxonomySeed.movieGenreIds + TaxonomySeed.tvGenreIds).map { "genre.$it" } +
+            (1930..2020 step 10).map { "decade.$it" } + (5..9).map { "rating.$it" } +
+            listOf("sphere.arab", "sphere.east_asia", "sphere.western", "sphere.other", "sphere.animation")
+        for (id in ids) assertTrue("missing $id", t.contains(id))
+    }
+
     @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {
         assertFalse(AdPolicy.allowed(AdPlacement.HOME_BANNER, userIsFiltering = true))
         assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = false))
