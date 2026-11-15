@@ -204,8 +204,8 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
 
         Text(tr("واجهة التلفاز", "TV edition"), style = MaterialTheme.typography.titleSmall)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = tvMode == "on", onCheckedChange = { p.setTvMode(if (it) "on" else "auto") })
-            Text(tr("تفعيل واجهة التلفاز يدويًا للتجربة (تعمل تلقائيًا على التلفاز؛ للخروج منها على الهاتف أوقف المفتاح بالريموت أو باللمس)", "Force the TV edition (it is automatic on a TV; turn it off here to go back on a phone)"), Modifier.padding(start = 8.dp))
+            Switch(checked = tvMode == "on", onCheckedChange = { p.setTvMode(if (it) "on" else "off") })
+            Text(tr("تفعيل واجهة التلفاز المبسّطة (الافتراضي: نفس تصميم الهاتف على كل الشاشات)", "Use the simplified TV edition (default: the same phone design on every screen)"), Modifier.padding(start = 8.dp))
         }
         HorizontalDivider()
 

@@ -39,6 +39,16 @@ jobs:
       - name: Unit tests
         run: gradle --no-daemon --stacktrace :app:testDebugUnitTest
 
+      - name: Check TMDB key secret
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: |
+          if [ -z "$TMDB_API_KEY" ]; then
+            echo "::warning title=TMDB_API_KEY is EMPTY::The app will ask for a TMDB key. Add it under Settings > Secrets and variables > Actions > Repository secrets (exact name TMDB_API_KEY)."
+          else
+            echo "TMDB_API_KEY secret is present (${#TMDB_API_KEY} characters)."
+          fi
+
       - name: Build debug APK
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}

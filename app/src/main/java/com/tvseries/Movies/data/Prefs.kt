@@ -98,7 +98,7 @@ class Prefs(private val store: KeyValueStore) {
     private val _adsConsent = MutableStateFlow(store.getString(K_ADS_CONSENT) ?: "unset")
     val adsConsent: StateFlow<String> = _adsConsent.asStateFlow()
 
-    private val _tvMode = MutableStateFlow(store.getString(K_TV_MODE) ?: "auto")
+    private val _tvMode = MutableStateFlow(store.getString(K_TV_MODE) ?: "off" // the phone design on every screen, TVs included; the TV edition is opt-in)
     val tvMode: StateFlow<String> = _tvMode.asStateFlow()
 
     private val _contentType = MutableStateFlow(store.getString(K_CONTENT) ?: "all")
