@@ -47,6 +47,7 @@ import com.tvseries.Movies.core.Condition
 import com.tvseries.Movies.core.FacetCount
 import com.tvseries.Movies.core.Outcome
 import com.tvseries.Movies.core.Taxonomy
+import com.tvseries.Movies.data.PersonInfo
 import com.tvseries.Movies.data.WorkCard
 
 /** Axes asked first in the guided flow. Others (cast, director, spoken languages) are only a fallback. */
@@ -92,6 +93,7 @@ fun FilterScreen(
     val notice by vm.notice.collectAsState()
     val serverCount by vm.serverCount.collectAsState()
     val probe by vm.probe.collectAsState()
+    val people by vm.people.collectAsState()
     val arabic = isArabic()
 
     val contentType by vm.contentType.collectAsState()
@@ -220,11 +222,14 @@ fun FilterScreen(
                     val extra = vm.extraCandidates(questionAxis, shownIds.toSet())
                     val toProbe = shownIds.take(12).let { it + extra.take(20 - it.size) }
                     LaunchedEffect(questionAxis, sel, excludeMode, toProbe) { vm.probe(questionAxis, toProbe) }
+                    if (questionAxis == Axes.CAST || questionAxis == Axes.DIRECTOR) {
+                        LaunchedEffect(questionAxis, shownIds) { vm.loadPeople(questionAxis, shownIds.take(12)) }
+                    }
                     QuestionCard(
                         title = questionTitle(questionAxis, def.name(arabic)),
                         resultCount = u.result.matched.size,
                         axis = questionAxis, view = questionView, taxonomy = tax, arabic = arabic,
-                        extra = extra, probe = probe,
+                        extra = extra, probe = probe, people = people,
                         excludeMode = excludeMode,
                         onMode = { vm.setExcludeMode(it) },
                         onPick = { value -> vm.toggle(questionAxis, value) },
@@ -270,7 +275,7 @@ fun FilterScreen(
                     u.snapshot.cards[w.key]?.let { WorkRow(it, onClick = { onOpen(it) }, badge = if (w.key in u.snapshot.wikidataKeys) tr("🌐 اكتُشف عبر Wikidata", "🌐 Found via Wikidata") else null) }
                 }
                 // Reaching the end of the list shows the next 40 loaded titles, then asks TMDB for the next pages
-                // (stops after 3 loads that add nothing, or at AUTO_LOAD_MAX matches; the buttons below still work).
+                // (stops after 3 loads that add nothing; the buttons below still work).
                 item(key = "end-of-list") {
                     val matchedSize = u.result.matched.size
                     LaunchedEffect(shownCount, matchedSize, loading, sel) {
@@ -281,7 +286,7 @@ fun FilterScreen(
                             lastMatched = matchedSize
                             return@LaunchedEffect
                         }
-                        if (idleLoads >= 3 || matchedSize >= AUTO_LOAD_MAX) return@LaunchedEffect
+                        if (idleLoads >= 3) return@LaunchedEffect
                         val refine = !sel.isEmpty
                         if (!vm.canLoadMore(refine)) return@LaunchedEffect
                         idleLoads = if (matchedSize == lastMatched) idleLoads + 1 else 0
@@ -310,9 +315,6 @@ fun FilterScreen(
     }
 }
 
-/** Automatic end-of-list loading stops at this many confirmed matches (the "More matching" button still works). */
-private const val AUTO_LOAD_MAX = 400
-
 /** The clearest level of a hierarchy: countries (not regions), decades (not single years) when possible. */
 private fun displayValues(axis: String, view: AxisView): List<FacetCount> {
     var v = view.values
@@ -323,6 +325,14 @@ private fun displayValues(axis: String, view: AxisView): List<FacetCount> {
     }
     return v
 }
+
+/** Arabic spelling of a person's name in the Arabic app when TMDB has one. */
+private fun personName(fc: FacetCount, name: String, arabic: Boolean, people: Map<String, PersonInfo>): String =
+    if (arabic) people[fc.value]?.arabicName ?: name else name
+
+/** " ★ 7.8" next to a person: the average TMDB rating of their best-known titles (TMDB has no rating for a person itself). */
+private fun personRating(fc: FacetCount, people: Map<String, PersonInfo>): String =
+    people[fc.value]?.rating?.let { " ★ $it" } ?: ""
 
 /** "≈N" when TMDB answered for this value, otherwise the count among the titles loaded on this device. */
 private fun countLabel(fc: FacetCount, probe: Map<String, Int>): String {
@@ -341,6 +351,7 @@ private fun QuestionCard(
     arabic: Boolean,
     extra: List<String>,
     probe: Map<String, Int>,
+    people: Map<String, PersonInfo>,
     excludeMode: Boolean,
     onMode: (Boolean) -> Unit,
     onPick: (String) -> Unit,
@@ -377,9 +388,9 @@ private fun QuestionCard(
                         FilterChip(
                             selected = on,
                             onClick = { pending = if (on) pending - fc.value else pending + fc.value },
-                            label = { Text(name + " · " + countLabel(fc, probe)) },
+                            label = { Text(personName(fc, name, arabic, people) + personRating(fc, people) + " · " + countLabel(fc, probe)) },
                         )
-                    } else ValueChip(fc, taxonomy, arabic, probe, onPick)
+                    } else ValueChip(fc, taxonomy, arabic, probe, people, onPick)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -411,8 +422,8 @@ private fun QuestionCard(
 }
 
 @Composable
-private fun ValueChip(fc: FacetCount, taxonomy: Taxonomy, arabic: Boolean, probe: Map<String, Int>, onPick: (String) -> Unit) {
-    val name = taxonomy.node(fc.value)?.name(arabic) ?: fc.value
+private fun ValueChip(fc: FacetCount, taxonomy: Taxonomy, arabic: Boolean, probe: Map<String, Int>, people: Map<String, PersonInfo>, onPick: (String) -> Unit) {
+    val name = personName(fc, taxonomy.node(fc.value)?.name(arabic) ?: fc.value, arabic, people) + personRating(fc, people)
     val count = countLabel(fc, probe)
     FilterChip(
         selected = fc.selected,

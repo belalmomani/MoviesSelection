@@ -15,6 +15,8 @@ import com.tvseries.Movies.core.Outcome
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.ContentType
 import com.tvseries.Movies.data.PoolSnapshot
+import com.tvseries.Movies.data.PersonInfo
+import com.tvseries.Movies.data.PersonScore
 import com.tvseries.Movies.data.ServerRefine
 import com.tvseries.Movies.data.TaxonomySeed
 import com.tvseries.Movies.data.Spheres
@@ -86,6 +88,12 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     val probe: StateFlow<Map<String, Int>> = _probe.asStateFlow()
     private var probeJob: Job? = null
     private var probeKey = ""
+
+    /** Rating and Arabic spelling for the people (cast / directors) offered by the question on screen, by value id. */
+    private val _people = MutableStateFlow<Map<String, PersonInfo>>(emptyMap())
+    val people: StateFlow<Map<String, PersonInfo>> = _people.asStateFlow()
+    private val personCache = HashMap<Int, PersonInfo>()
+    private var peopleJob: Job? = null
 
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
@@ -213,6 +221,40 @@ class FilterViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun isMappable(sel: Selection): Boolean = ServerRefine.canRefine(sel)
+
+    /**
+     * Fetches the rating (average rating of the person's best-known titles) and the Arabic spelling of each person's name,
+     * 3 at a time, cached. Results arrive one by one in [people]; a failed request just leaves that person without a rating.
+     */
+    fun loadPeople(axis: String, values: List<String>) {
+        if (axis != Axes.CAST && axis != Axes.DIRECTOR) return
+        peopleJob?.cancel()
+        peopleJob = viewModelScope.launch {
+            val gate = Semaphore(PROBE_PARALLEL)
+            coroutineScope {
+                for (v in values) {
+                    val id = v.substringAfter('.').toIntOrNull() ?: continue
+                    val cached = personCache[id]
+                    if (cached != null) {
+                        _people.update { it + (v to cached) }
+                        continue
+                    }
+                    launch {
+                        gate.withPermit {
+                            val info = try {
+                                val p = c.repo.person(id)
+                                PersonInfo(PersonScore.forPerson(p, directing = axis == Axes.DIRECTOR), PersonScore.arabicName(p.alsoKnownAs))
+                            } catch (e: TmdbError) {
+                                return@withPermit
+                            }
+                            personCache[id] = info
+                            _people.update { it + (v to info) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /** True while TMDB still has pages left for what [loadMore] with the same [refine] would ask for. */
     fun canLoadMore(refine: Boolean): Boolean {
