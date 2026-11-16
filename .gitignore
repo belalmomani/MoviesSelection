@@ -5,10 +5,4 @@ local.properties
 .idea/
 *.jks
 *.keystore
-captures/
-.externalNativeBuild/
-.cxx/
-secrets.properties
-
-# the shared TEST signing key must be committed (see app/signing)
-!app/signing/*.keystore
+.DS_Store

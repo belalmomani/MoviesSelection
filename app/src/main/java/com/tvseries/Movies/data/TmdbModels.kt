@@ -208,7 +208,6 @@ data class PersonDto(
     @SerialName("profile_path") val profilePath: String? = null,
     @SerialName("known_for_department") val knownForDepartment: String? = null,
     @SerialName("combined_credits") val combinedCredits: PersonCreditsDto? = null,
-    @SerialName("also_known_as") val alsoKnownAs: List<String> = emptyList(),
 )
 
 @Serializable

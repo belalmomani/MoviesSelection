@@ -67,8 +67,8 @@ object NodeFactory {
     }
 
     fun keyword(id: Int, name: String) = TaxonomyNode(
-        id = "keyword.$id", axis = Axes.KEYWORD, nameAr = KeywordArabic.translate(name) ?: name, nameEn = name,
-        source = Source.TMDB_OFFICIAL, // TMDB keywords are English only: common ones get an Arabic name from KeywordArabic, the rest keep the English name.
+        id = "keyword.$id", axis = Axes.KEYWORD, nameAr = name, nameEn = name,
+        source = Source.TMDB_OFFICIAL, // TMDB keywords are English only; no Arabic translation exists in the source.
     )
 
     fun person(axis: String, id: Int, name: String) = TaxonomyNode(

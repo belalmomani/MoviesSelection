@@ -1,0 +1,23 @@
+{
+  "manufacturers": [
+    "GDYM"
+  ],
+  "brands": [
+    "MAGIC",
+    "MAGIC SMART",
+    "HiDPT"
+  ],
+  "model_regex": "",
+  "hardware_regex": "",
+  "tv_only": false,
+  "min_api": 1,
+  "max_api": 999,
+  "packages": [
+    "com.cultraview.setting"
+  ],
+  "components": [],
+  "actions": [],
+  "id": "magic_smart",
+  "name": "MAGIC SMART (GDYM)",
+  "notes": "جهاز مُحلَّل فعلياً وأُكِّد تفعيله بالكامل: GDYM SMART_TV، Android 14، بناء userdebug (dev-keys)، لوحة HiSilicon Hi3751V352E (bigfish)، علامة النظام HiDPT. الإعدادات العامة والواي فاي تتولاهما com.cultraview.setting؛ بقية الصفحات من AOSP القياسي؛ لا توجد com.android.tv.settings. تأكَّد عملياً: مسار خيارات المطوّر الرسمي كان يقود إلى DevelopmentSettingsDisabledActivity (تعطيل متعمَّد من المصنّع)، وتفعيله الفعلي تم فقط بالضغط اليدوي المتكرر على رقم البنية حتى نجح، لا عبر أي مسار برمجي. بعد التفعيل: تصحيح USB يعمل والمنفذ الشبكي 5555 (adb tcpip) يستجيب فعلاً ونُفِّذت عبره أوامر ADB حقيقية وتثبيت تطبيقات وريموت كنترول من داخل هذا التطبيق بنجاح. التصحيح اللاسلكي (adb_wifi) لا يعمل: المفتاح يعود للإيقاف تلقائياً بعد تفعيله، على الأرجح لأن النظام يفشل في تشغيل خدمته الداخلية على هذا البناء؛ غير ضروري عملياً لأن USB الشبكي بديل يعمل. لا دليل حتى الآن على وجود آلية تحديث نظام (OTA) رسمية؛ البناء userdebug بلا بنية تحديث يرجّح عدم وجودها أصلاً."
+}

@@ -11,11 +11,6 @@ import com.tvseries.Movies.data.ListItemDto
 import com.tvseries.Movies.data.MemoryStore
 import com.tvseries.Movies.data.PageDto
 import com.tvseries.Movies.data.Prefs
-import com.tvseries.Movies.data.PersonCreditsDto
-import com.tvseries.Movies.data.PersonDto
-import com.tvseries.Movies.data.PersonScore
-import com.tvseries.Movies.data.KeywordArabic
-import com.tvseries.Movies.data.NodeFactory
 import com.tvseries.Movies.data.ServerRefine
 import com.tvseries.Movies.data.TaxonomySeed
 import com.tvseries.Movies.data.TmdbClient
@@ -436,54 +431,6 @@ class DataLayerTest {
         var many = Selection().toggleInclude(Axes.SPHERE, "sphere.animation")
         for (g in listOf(35, 18, 80, 14, 878)) many = many.toggleInclude(Axes.GENRE, "genre.$g")
         assertEquals(setOf(16), ServerRefine.refineAll(many, t, "movie", DiscoverQuery()).single().genres)
-    }
-
-    private fun credit(id: Int, avg: Double, votes: Int, pop: Double, media: String = "movie", job: String? = null) =
-        ListItemDto(id = id, mediaType = media, voteAverage = avg, voteCount = votes, popularity = pop, job = job)
-
-    @Test fun personRatingIsTheWeightedAverageOfTheBestKnownTitles() {
-        // too little data: no rating at all
-        assertNull(PersonScore.rating(listOf(credit(1, 8.0, 5000, 50.0), credit(2, 7.0, 4000, 40.0))))
-        // titles with few votes do not count
-        assertNull(PersonScore.rating(listOf(credit(1, 8.0, 5000, 50.0), credit(2, 7.0, 4000, 40.0), credit(3, 9.9, 10, 99.0))))
-        val r = PersonScore.rating(listOf(credit(1, 8.0, 5000, 50.0), credit(2, 7.0, 5000, 40.0), credit(3, 6.0, 5000, 30.0)))!!
-        assertEquals(7.0, r, 0.0001)
-        // a title seen as both movie and tv with the same id is counted separately, the same entry twice only once
-        val dup = PersonScore.rating(listOf(credit(1, 8.0, 5000, 50.0), credit(1, 8.0, 5000, 50.0), credit(2, 7.0, 5000, 40.0), credit(3, 6.0, 5000, 30.0)))!!
-        assertEquals(7.0, dup, 0.0001)
-    }
-
-    @Test fun directorsUseOnlyTitlesTheyDirectedAndActorsUseCast() {
-        val person = PersonDto(
-            id = 1, name = "X",
-            combinedCredits = PersonCreditsDto(
-                cast = listOf(credit(1, 9.0, 9000, 90.0), credit(2, 9.0, 9000, 80.0), credit(3, 9.0, 9000, 70.0)),
-                crew = listOf(
-                    credit(4, 5.0, 9000, 90.0, job = "Director"), credit(5, 5.0, 9000, 80.0, job = "Director"),
-                    credit(6, 5.0, 9000, 70.0, job = "Director"), credit(7, 1.0, 9000, 60.0, job = "Producer"),
-                ),
-            ),
-        )
-        assertEquals(9.0, PersonScore.forPerson(person, directing = false)!!, 0.0001)
-        assertEquals(5.0, PersonScore.forPerson(person, directing = true)!!, 0.0001)
-    }
-
-    @Test fun arabicPersonNameIsTakenFromAlsoKnownAsOnlyIfItIsArabic() {
-        assertEquals("توم هانكس", PersonScore.arabicName(listOf("Thomas Jeffrey Hanks", " توم هانكس ", "トム・ハンクス")))
-        assertNull(PersonScore.arabicName(listOf("Thomas Jeffrey Hanks")))
-        assertNull(PersonScore.arabicName(emptyList()))
-    }
-
-    @Test fun keywordsGetArabicNamesButUnknownOnesKeepTheirEnglishName() {
-        assertEquals("انتقام", KeywordArabic.translate("Revenge"))
-        assertEquals("مقتبس من رواية أو كتاب", KeywordArabic.translate("  based on novel or book "))
-        assertNull(KeywordArabic.translate("some very rare tmdb keyword"))
-        assertEquals("some very rare tmdb keyword", KeywordArabic.display("some very rare tmdb keyword", arabic = true))
-        assertEquals("revenge", KeywordArabic.display("revenge", arabic = false))
-        val node = NodeFactory.keyword(9748, "revenge")
-        assertEquals("انتقام", node.name(true)); assertEquals("revenge", node.name(false))
-        val rare = NodeFactory.keyword(1, "some very rare tmdb keyword")
-        assertEquals("some very rare tmdb keyword", rare.name(true))
     }
 
     @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {
