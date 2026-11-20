@@ -216,6 +216,7 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
                     onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onChoose = { nav.navigate(Routes.CHOOSE) },
                     onParty = { nav.navigate(Routes.PARTY) }, onTimeGate = { nav.navigate(Routes.TIMEGATE) },
                     onWeb = { t, i -> nav.navigate(Routes.web(t, i)) },
+                    onPerson = { nav.navigate(Routes.person(it)) },
                 )
             }
             composable(Routes.FILTER) {

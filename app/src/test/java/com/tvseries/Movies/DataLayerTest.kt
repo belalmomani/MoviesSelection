@@ -17,6 +17,7 @@ import com.tvseries.Movies.data.PersonScore
 import com.tvseries.Movies.data.KeywordArabic
 import com.tvseries.Movies.data.NodeFactory
 import com.tvseries.Movies.data.ServerRefine
+import com.tvseries.Movies.data.TopLists
 import com.tvseries.Movies.data.TaxonomySeed
 import com.tvseries.Movies.data.TmdbClient
 import com.tvseries.Movies.data.TmdbError
@@ -484,6 +485,31 @@ class DataLayerTest {
         assertEquals("انتقام", node.name(true)); assertEquals("revenge", node.name(false))
         val rare = NodeFactory.keyword(1, "some very rare tmdb keyword")
         assertEquals("some very rare tmdb keyword", rare.name(true))
+    }
+
+    @Test fun tvNavigationButtonsAreOffByDefaultAndPersist() {
+        val store = MemoryStore()
+        assertFalse(Prefs(store).tvNav.value)
+        Prefs(store).setTvNav(true)
+        assertTrue(Prefs(store).tvNav.value)
+    }
+
+    @Test fun topRatedRowsAskTmdbForRatingEightPlusWithEnoughVotes() {
+        val movie = TopLists.titleQuery(DiscoverQuery(), "movie").params("movie", 1, "en-US")
+        assertEquals("8", movie["vote_average.gte"]); assertEquals("1500", movie["vote_count.gte"]); assertEquals("vote_average.desc", movie["sort_by"])
+        val tv = TopLists.titleQuery(DiscoverQuery(), "tv").params("tv", 1, "en-US")
+        assertEquals("8", tv["vote_average.gte"]); assertEquals("500", tv["vote_count.gte"])
+        // the user's adult-content choice is kept
+        assertEquals("true", TopLists.titleQuery(DiscoverQuery(includeAdult = true), "movie").params("movie", 1, "en-US")["include_adult"])
+    }
+
+    @Test fun famousActorsRowKeepsOnlyActorsRatedSevenOrMore() {
+        assertTrue(TopLists.isActor(ListItemDto(id = 1, name = "A", knownForDepartment = "Acting")))
+        assertFalse(TopLists.isActor(ListItemDto(id = 2, name = "B", knownForDepartment = "Directing")))
+        assertFalse(TopLists.isActor(ListItemDto(id = 3, name = "  ", knownForDepartment = "Acting")))
+        assertFalse(TopLists.isActor(ListItemDto(id = 0, name = "C", knownForDepartment = "Acting")))
+        assertTrue(TopLists.actorPasses(7.0)); assertTrue(TopLists.actorPasses(8.4))
+        assertFalse(TopLists.actorPasses(6.9)); assertFalse(TopLists.actorPasses(null))
     }
 
     @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {

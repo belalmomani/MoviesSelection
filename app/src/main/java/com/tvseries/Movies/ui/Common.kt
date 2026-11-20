@@ -91,6 +91,27 @@ fun PosterCard(card: WorkCard, onClick: () -> Unit, modifier: Modifier = Modifie
 }
 
 @Composable
+fun PersonCard(name: String, photoPath: String?, rating: Double?, onClick: () -> Unit, modifier: Modifier = Modifier.width(124.dp)) {
+    Column(modifier.clickable(onClick = onClick)) {
+        Box {
+            PosterImage(
+                Img.profile(photoPath), name,
+                Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(14.dp)),
+            )
+            rating?.let {
+                Text(
+                    "★ " + fmt1(it), color = Color.White, style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(8.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
 fun WorkRow(card: WorkCard, onClick: () -> Unit, badge: String? = null, trailing: (@Composable () -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),

@@ -91,6 +91,7 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val key by p.apiKey.collectAsState()
     val hideWatched by p.hideWatched.collectAsState()
     val tvMode by p.tvMode.collectAsState()
+    val tvNav by p.tvNav.collectAsState()
     val adsConsent by p.adsConsent.collectAsState()
     val gateLite by p.gateLite.collectAsState()
     val holeAuto by p.holeAuto.collectAsState()
@@ -206,6 +207,12 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Switch(checked = tvMode == "on", onCheckedChange = { p.setTvMode(if (it) "on" else "off") })
             Text(tr("تفعيل واجهة التلفاز المبسّطة (الافتراضي: نفس تصميم الهاتف على كل الشاشات)", "Use the simplified TV edition (default: the same phone design on every screen)"), Modifier.padding(start = 8.dp))
+        }
+        if (isTelevisionDevice(ctx)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = tvNav, onCheckedChange = { p.setTvNav(it) })
+                Text(tr("أزرار تنقل صغيرة (أعلى / أسفل) على الشاشة. مفاتيح الصفحة والقناة في الريموت تعمل دائمًا", "Small up / down buttons on screen (the remote's page and channel keys always work)"), Modifier.padding(start = 8.dp))
+            }
         }
         HorizontalDivider()
 

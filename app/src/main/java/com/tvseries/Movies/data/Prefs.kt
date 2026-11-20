@@ -32,7 +32,9 @@ class MemoryStore : KeyValueStore {
 class SharedPrefsStore(private val sp: SharedPreferences) : KeyValueStore {
     override fun getString(key: String): String? = sp.getString(key, null)
     override fun putString(key: String, value: String) {
-        sp.edit().putString(key, value).apply()
+        // commit() writes to disk before returning: on some TV boxes the process is killed the moment the app is closed,
+        // and apply() (asynchronous) could still be pending. These writes are tiny.
+        sp.edit().putString(key, value).commit()
     }
 }
 
@@ -101,6 +103,9 @@ class Prefs(private val store: KeyValueStore) {
     private val _tvMode = MutableStateFlow(store.getString(K_TV_MODE) ?: "off") // phone design on every screen, TVs included; the TV edition is opt-in
     val tvMode: StateFlow<String> = _tvMode.asStateFlow()
 
+    private val _tvNav = MutableStateFlow(store.getString(K_TV_NAV) == "true")
+    val tvNav: StateFlow<Boolean> = _tvNav.asStateFlow()
+
     private val _contentType = MutableStateFlow(store.getString(K_CONTENT) ?: "all")
     val contentType: StateFlow<String> = _contentType.asStateFlow()
 
@@ -149,6 +154,7 @@ class Prefs(private val store: KeyValueStore) {
 
     /** "auto" = TV edition only on a real TV; "on" = force it (to preview on a phone). */
     fun setTvMode(v: String) { _tvMode.value = v; store.putString(K_TV_MODE, v) }
+    fun setTvNav(v: Boolean) { _tvNav.value = v; store.putString(K_TV_NAV, v.toString()) }
 
     fun setContentType(v: String) { _contentType.value = v; store.putString(K_CONTENT, v) }
 
@@ -254,6 +260,7 @@ class Prefs(private val store: KeyValueStore) {
         const val K_GATE_SPEED = "gate_speed"
         const val K_ADS_CONSENT = "ads_consent"
         const val K_TV_MODE = "tv_mode"
+        const val K_TV_NAV = "tv_nav"
         const val K_CONTENT = "content_type"
         const val K_UPDATE_TOKEN = "update_token"
         const val K_INTENT = "user_intent"

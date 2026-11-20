@@ -51,20 +51,31 @@ import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.GemFinder
 import com.tvseries.Movies.data.ContentType
 import com.tvseries.Movies.data.ListItemDto
+import com.tvseries.Movies.data.PersonScore
+import com.tvseries.Movies.data.TopLists
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.TmdbError
 import com.tvseries.Movies.data.WorkCard
 import com.tvseries.Movies.data.toCard
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 sealed interface Load<out T> {
     data object Loading : Load<Nothing>
     data class Ok<T>(val value: T) : Load<T>
     data class Fail(val error: TmdbError) : Load<Nothing>
 }
+
+/** A well-known actor for the Home row: [rating] is the average TMDB rating of their best-known titles. */
+class TopActor(val id: Int, val name: String, val nameAr: String?, val profilePath: String?, val rating: Double)
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val c = (app as MoviesApp).container
@@ -137,6 +148,95 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             .take(24)
     }
 
+    // ---- Titles rated 8 and above, and well-known actors rated 7 and above ----
+
+    private val _top8Movies = MutableStateFlow<Load<List<WorkCard>>>(Load.Loading)
+    val top8Movies: StateFlow<Load<List<WorkCard>>> = _top8Movies.asStateFlow()
+    private val _top8Series = MutableStateFlow<Load<List<WorkCard>>>(Load.Loading)
+    val top8Series: StateFlow<Load<List<WorkCard>>> = _top8Series.asStateFlow()
+    private var top8Started = false
+
+    fun loadTop8(force: Boolean = false) {
+        if (top8Started && !force && _top8Movies.value !is Load.Fail && _top8Series.value !is Load.Fail) return
+        top8Started = true
+        loadTop8("movie", _top8Movies)
+        loadTop8("tv", _top8Series)
+    }
+
+    private fun loadTop8(media: String, target: MutableStateFlow<Load<List<WorkCard>>>) {
+        viewModelScope.launch {
+            target.value = Load.Loading
+            target.value = try {
+                Load.Ok(fetchTop8(media))
+            } catch (e: TmdbError) {
+                Load.Fail(e)
+            }
+        }
+    }
+
+    private suspend fun fetchTop8(media: String): List<WorkCard> {
+        val q = TopLists.titleQuery(c.repo.baseQuery(), media)
+        val out = ArrayList<WorkCard>()
+        for (page in 1..TOP8_PAGES) {
+            out += c.repo.discover(media, page, q).results.mapNotNull { it.toCard(media) }
+        }
+        return out.filter { (it.rating ?: 0.0) >= TopLists.MIN_TITLE_RATING }.distinctBy { it.key }
+    }
+
+    private val _actors = MutableStateFlow<Load<List<TopActor>>>(Load.Loading)
+    val actors: StateFlow<Load<List<TopActor>>> = _actors.asStateFlow()
+    private var actorsJob: Job? = null
+
+    fun loadActors(force: Boolean = false) {
+        if (!force && (actorsJob?.isActive == true || _actors.value is Load.Ok)) return
+        actorsJob = viewModelScope.launch {
+            _actors.value = Load.Loading
+            _actors.value = try {
+                Load.Ok(fetchActors())
+            } catch (e: TmdbError) {
+                Load.Fail(e)
+            }
+        }
+    }
+
+    /** TMDB's most popular people, kept when they act and the average rating of their best-known titles is 7 or more. */
+    private suspend fun fetchActors(): List<TopActor> {
+        val found = ArrayList<TopActor>()
+        val gate = Semaphore(ACTOR_PARALLEL)
+        for (page in 1..ACTOR_PAGES) {
+            val people = c.repo.list("person/popular", page).results.filter { TopLists.isActor(it) }
+            val rated = coroutineScope {
+                people.map { item ->
+                    async {
+                        gate.withPermit {
+                            try {
+                                val p = c.repo.person(item.id)
+                                val r = PersonScore.forPerson(p, directing = false)
+                                if (TopLists.actorPasses(r)) {
+                                    TopActor(item.id, item.name.orEmpty(), PersonScore.arabicName(p.alsoKnownAs), item.profilePath, r ?: 0.0)
+                                } else {
+                                    null
+                                }
+                            } catch (e: TmdbError) {
+                                null
+                            }
+                        }
+                    }
+                }.awaitAll().filterNotNull()
+            }
+            found += rated
+            if (found.size >= ACTOR_TARGET) break
+        }
+        return found.take(ACTOR_TARGET)
+    }
+
+    private companion object {
+        const val TOP8_PAGES = 2
+        const val ACTOR_PAGES = 3
+        const val ACTOR_TARGET = 20
+        const val ACTOR_PARALLEL = 4
+    }
+
     fun savedConditionCount(): Int = c.prefs.loadSelection().conditions().size
 
     // Must stay LAST: it runs after every property above is initialised.
@@ -170,11 +270,16 @@ fun HomeScreen(
     onOpen: (WorkCard) -> Unit,
     onSearch: () -> Unit,
     onFilter: (Selection?) -> Unit,
+    onPerson: (Int) -> Unit = {},
     vm: HomeViewModel = viewModel(),
 ) {
     val saved = remember { vm.savedConditionCount() }
     val type by vm.contentType.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(type) { vm.loadGems() }
+    androidx.compose.runtime.LaunchedEffect(type) {
+        vm.loadGems()
+        vm.loadTop8()
+        vm.loadActors()
+    }
     val savedFilters by vm.savedFilters.collectAsState()
     val trending by vm.flow("trending").collectAsState()
 
@@ -292,6 +397,61 @@ fun HomeScreen(
                     is Load.Fail -> ErrorBox(g.error, onRetry = { vm.loadGems(true) })
                     is Load.Ok -> LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(g.value, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
+                    }
+                }
+            }
+
+            if (type == "all" || type == "movie") {
+                item {
+                    val top by vm.top8Movies.collectAsState()
+                    SectionTitle(tr("أفلام تقييمها 8 فأعلى", "Movies rated 8 and above"))
+                    Text(
+                        tr("الأعلى تقييمًا بين الجمهور، بحد أدنى 1,500 صوت.", "Highest rated by audiences, with at least 1,500 votes."),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                    when (val t = top) {
+                        is Load.Loading -> CenterLoading()
+                        is Load.Fail -> ErrorBox(t.error, onRetry = { vm.loadTop8(true) })
+                        is Load.Ok -> LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(t.value, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
+                        }
+                    }
+                }
+            }
+            if (type == "all" || type == "tv") {
+                item {
+                    val top by vm.top8Series.collectAsState()
+                    SectionTitle(tr("مسلسلات تقييمها 8 فأعلى", "Series rated 8 and above"))
+                    Text(
+                        tr("الأعلى تقييمًا بين الجمهور، بحد أدنى 500 صوت.", "Highest rated by audiences, with at least 500 votes."),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                    when (val t = top) {
+                        is Load.Loading -> CenterLoading()
+                        is Load.Fail -> ErrorBox(t.error, onRetry = { vm.loadTop8(true) })
+                        is Load.Ok -> LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(t.value, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
+                        }
+                    }
+                }
+            }
+            item {
+                val people by vm.actors.collectAsState()
+                SectionTitle(tr("أشهر الممثلين (تقييم 7 فأعلى)", "Famous actors (rated 7 and above)"))
+                Text(
+                    tr("تقييم الممثل = متوسط تقييم أشهر أعماله على TMDB.", "An actor's rating = the average TMDB rating of their best-known titles."),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                )
+                when (val a = people) {
+                    is Load.Loading -> CenterLoading()
+                    is Load.Fail -> ErrorBox(a.error, onRetry = { vm.loadActors(true) })
+                    is Load.Ok -> LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(a.value, key = { it.id }) { actor ->
+                            PersonCard(tr(actor.nameAr ?: actor.name, actor.name), actor.profilePath, actor.rating, onClick = { onPerson(actor.id) })
+                        }
                     }
                 }
             }
