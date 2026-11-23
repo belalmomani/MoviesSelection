@@ -56,6 +56,9 @@ import com.tvseries.Movies.data.CardPool
 import com.tvseries.Movies.data.ListItemDto
 import com.tvseries.Movies.data.PersonScore
 import com.tvseries.Movies.data.TopLists
+import com.tvseries.Movies.data.WatchedProfile
+import com.tvseries.Movies.data.TaxonomySeed
+import com.tvseries.Movies.core.Taxonomy
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.TmdbError
 import com.tvseries.Movies.data.WorkCard
@@ -76,6 +79,12 @@ sealed interface Load<out T> {
     data class Ok<T>(val value: T) : Load<T>
     data class Fail(val error: TmdbError) : Load<Nothing>
 }
+
+/** Suggestions of one genre the user watches a lot ([count] of their watched titles are of it). */
+class ForYouSection(val genreId: Int, val count: Int, val cards: List<WorkCard>)
+
+/** [known] = watched titles whose genres are known; [sections] stays empty until there are enough of them. */
+class ForYou(val known: Int, val sections: List<ForYouSection>)
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val c = (app as MoviesApp).container
@@ -181,6 +190,77 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             out += c.repo.discover(media, page, q).results.mapNotNull { it.toCard(media) }
         }
         return out.filter { (it.rating ?: 0.0) >= TopLists.MIN_TITLE_RATING }.distinctBy { it.key }
+    }
+
+    // ---- "What you watched": suggestions of the genres the user watches most ----
+
+    val watchedKeys: StateFlow<Set<String>> get() = c.prefs.watched
+
+    private val _forYou = MutableStateFlow<Load<ForYou>>(Load.Loading)
+    val forYou: StateFlow<Load<ForYou>> = _forYou.asStateFlow()
+    private var forYouJob: Job? = null
+    private var forYouFor: Set<String>? = null
+
+    fun loadForYou(force: Boolean = false) {
+        val keys = c.prefs.watched.value
+        if (!force && keys == forYouFor && _forYou.value is Load.Ok) return
+        forYouJob?.cancel()
+        forYouFor = keys
+        forYouJob = viewModelScope.launch {
+            if (_forYou.value !is Load.Ok) _forYou.value = Load.Loading
+            _forYou.value = try {
+                Load.Ok(buildForYou(keys))
+            } catch (e: TmdbError) {
+                Load.Fail(e)
+            }
+        }
+    }
+
+    private suspend fun buildForYou(keys: Set<String>): ForYou {
+        val genres = genresOfWatched(keys.toList().take(WATCHED_LOOKUP_MAX))
+        val top = WatchedProfile.top(genres.values.toList())
+        if (top.isEmpty()) return ForYou(genres.size, emptyList())
+        val sections = top.map { t -> ForYouSection(t.genreId, t.count, suggestionsFor(t.genreId, keys)) }.filter { it.cards.isNotEmpty() }
+        return ForYou(genres.size, sections)
+    }
+
+    /** Genre ids of each watched title: from the copy kept on the device, asking TMDB only for the ones not seen before. */
+    private suspend fun genresOfWatched(keys: List<String>): Map<String, List<Int>> {
+        val cache = HashMap(c.prefs.watchedGenres())
+        val missing = keys.filter { it !in cache }
+        if (missing.isNotEmpty()) {
+            val gate = Semaphore(ACTOR_PARALLEL)
+            val fetched = coroutineScope {
+                missing.map { key ->
+                    async {
+                        gate.withPermit {
+                            val id = key.substringAfter(':').toIntOrNull()
+                            if (id == null) {
+                                null
+                            } else {
+                                try {
+                                    key to c.repo.details(key.substringBefore(':'), id).genres.orEmpty().map { it.id }
+                                } catch (e: TmdbError) {
+                                    null
+                                }
+                            }
+                        }
+                    }
+                }.awaitAll().filterNotNull()
+            }
+            for ((key, ids) in fetched) cache[key] = ids
+            if (fetched.isNotEmpty()) c.prefs.setWatchedGenres(cache)
+        }
+        return keys.mapNotNull { key -> cache[key]?.let { key to it } }.toMap()
+    }
+
+    private suspend fun suggestionsFor(filmGenreId: Int, watched: Set<String>): List<WorkCard> {
+        val base = c.repo.baseQuery()
+        val perKind = listOf("movie", "tv").map { media ->
+            val q = WatchedProfile.suggestionQuery(base, media, filmGenreId)
+            if (q == null) emptyList() else c.repo.discover(media, 1, q).results.mapNotNull { it.toCard(media) }.filter { it.key !in watched }
+        }
+        return WatchedProfile.mix(perKind[0], perKind[1], FOR_YOU_SIZE)
     }
 
     // ---- 10 movies and 10 series a day, rated 8 and above, picked from a pool kept on the device for a week ----
@@ -291,6 +371,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         const val TOP8_PAGES = 2
         const val TITLE_POOL_PAGES = 5
+        const val WATCHED_LOOKUP_MAX = 40
+        const val FOR_YOU_SIZE = 20
         const val POOL_PAGES = 12
         const val POOL_TARGET = 60
         const val ACTOR_PARALLEL = 4
@@ -339,6 +421,10 @@ fun HomeScreen(
         vm.loadTop8()
         vm.loadActors()
         vm.loadDaily()
+    }
+    val watchedNow by vm.watchedKeys.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(watchedNow) {
+        vm.loadForYou()
     }
     val savedFilters by vm.savedFilters.collectAsState()
     val trending by vm.flow("trending").collectAsState()
@@ -461,6 +547,10 @@ fun HomeScreen(
                 }
             }
 
+            item {
+                val forYou by vm.forYou.collectAsState()
+                ForYouBlock(forYou, type, onOpen)
+            }
             if (type == "all" || type == "movie") {
                 item {
                     val top by vm.top8Movies.collectAsState()
@@ -623,6 +713,38 @@ private fun DailyTitlesRow(
                     items(picks, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
                 }
             }
+        }
+    }
+}
+
+/** "What you watched": a row per genre the user watches most; a short hint until enough titles are marked as watched. */
+@Composable
+private fun ForYouBlock(state: Load<ForYou>, type: String, onOpen: (WorkCard) -> Unit) {
+    val ok = state as? Load.Ok<ForYou> ?: return // loading or failed: this row is optional, so nothing is shown
+    val forYou = ok.value
+    val taxonomy = androidx.compose.runtime.remember { Taxonomy(TaxonomySeed.nodes()) }
+    if (forYou.sections.isEmpty()) {
+        if (forYou.known < WatchedProfile.MIN_KNOWN) {
+            ActorRowHeader(
+                tr("ماذا شاهدت؟", "What have you watched?"),
+                tr(
+                    "علّم الأعمال التي شاهدتها بزر «شاهدتُه» في صفحة العمل (3 أعمال على الأقل) لتظهر لك اقتراحات تشبه ما تحب.",
+                    "Mark what you have watched with the \"Watched\" button on a title page (at least 3) to get suggestions like what you enjoy.",
+                ),
+            )
+        }
+        return
+    }
+    for (section in forYou.sections) {
+        val cards = section.cards.filter { ContentType.allows(type, it.key) }
+        if (cards.isEmpty()) continue
+        val name = taxonomy.node("genre.${section.genreId}")?.name(isArabic()) ?: continue
+        ActorRowHeader(
+            tr("لأنك تشاهد $name كثيرًا", "Because you watch a lot of $name"),
+            tr("${section.count} من أصل ${forYou.known} عمل شاهدتَه من هذا النوع.", "${section.count} of the ${forYou.known} titles you watched are $name."),
+        )
+        LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(cards, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
         }
     }
 }

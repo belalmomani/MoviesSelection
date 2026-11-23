@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import com.tvseries.Movies.ads.AdCapState
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
@@ -47,6 +48,7 @@ class Prefs(private val store: KeyValueStore) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val cardsSer = ListSerializer(WorkCard.serializer())
     private val stringsSer = ListSerializer(String.serializer())
+    private val genreMapSer = MapSerializer(String.serializer(), ListSerializer(Int.serializer()))
 
     private val _language = MutableStateFlow(store.getString(K_LANG) ?: "ar")
     val language: StateFlow<String> = _language.asStateFlow()
@@ -157,6 +159,14 @@ class Prefs(private val store: KeyValueStore) {
     fun setTvMode(v: String) { _tvMode.value = v; store.putString(K_TV_MODE, v) }
     fun setTvNav(v: Boolean) { _tvNav.value = v; store.putString(K_TV_NAV, v.toString()) }
 
+    /** Genre ids of the titles marked as watched (key -> ids), kept so each title is looked up only once. */
+    fun watchedGenres(): Map<String, List<Int>> =
+        runCatching { store.getString(K_WATCHED_GENRES)?.let { json.decodeFromString(genreMapSer, it) } }.getOrNull().orEmpty()
+
+    fun setWatchedGenres(m: Map<String, List<Int>>) {
+        store.putString(K_WATCHED_GENRES, json.encodeToString(genreMapSer, m))
+    }
+
     fun actorPool(): ActorPool? =
         runCatching { store.getString(K_ACTOR_POOL)?.let { json.decodeFromString(ActorPool.serializer(), it) } }.getOrNull()
 
@@ -209,6 +219,7 @@ class Prefs(private val store: KeyValueStore) {
         store.putString(K_WATCH, "[]")
         _watched.value = emptySet()
         store.putString(K_WATCHED, "[]")
+        store.putString(K_WATCHED_GENRES, "{}")
         _saved.value = emptyList()
         store.putString(K_SAVED, "[]")
         setTaste(TasteProfile())
@@ -289,6 +300,7 @@ class Prefs(private val store: KeyValueStore) {
         const val K_TV_MODE = "tv_mode"
         const val K_TV_NAV = "tv_nav"
         const val K_ACTOR_POOL = "actor_pool"
+        const val K_WATCHED_GENRES = "watched_genres"
         const val K_TITLE_POOL = "title_pool_"
         const val K_AD_DAY = "ad_cap_day"
         const val K_AD_COUNT = "ad_cap_count"

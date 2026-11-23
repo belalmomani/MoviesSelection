@@ -24,6 +24,7 @@ import com.tvseries.Movies.data.CardPool
 import com.tvseries.Movies.data.KnownForDto
 import com.tvseries.Movies.data.ServerRefine
 import com.tvseries.Movies.data.TopLists
+import com.tvseries.Movies.data.WatchedProfile
 import com.tvseries.Movies.data.TaxonomySeed
 import com.tvseries.Movies.data.TmdbClient
 import com.tvseries.Movies.data.TmdbError
@@ -625,6 +626,45 @@ class DataLayerTest {
         Prefs(store).setCardPool("movie", pool)
         assertEquals(pool, Prefs(store).cardPool("movie"))
         assertNull(Prefs(store).cardPool("tv")) // series have their own pool
+    }
+
+    @Test fun watchedProfileSuggestsTheGenresWatchedMost() {
+        // too little to say anything
+        assertTrue(WatchedProfile.top(listOf(listOf(28), listOf(28))).isEmpty())
+        // 7 action, 4 comedy, 1 drama: action first, comedy second, the lone drama is below a quarter
+        val watched = List(7) { listOf(28) } + List(4) { listOf(35) } + listOf(listOf(18))
+        val top = WatchedProfile.top(watched)
+        assertEquals(listOf(28, 35), top.map { it.genreId })
+        assertEquals(7, top[0].count)
+        // a series genre with a film twin counts under the film genre
+        val tv = WatchedProfile.top(List(3) { listOf(10759) } + listOf(listOf(28)))
+        assertEquals(28, tv[0].genreId); assertEquals(4, tv[0].count)
+        // titles without known genres are ignored
+        assertEquals(1, WatchedProfile.top(List(3) { listOf(28) } + List(5) { emptyList<Int>() }).size)
+    }
+
+    @Test fun suggestionsAskForTheMatchingGenreOfEachKind() {
+        assertEquals(28, WatchedProfile.genreFor("movie", 28))
+        assertEquals(10759, WatchedProfile.genreFor("tv", 28))
+        assertEquals(10765, WatchedProfile.genreFor("tv", 878))
+        assertEquals(35, WatchedProfile.genreFor("tv", 35))
+        assertNull(WatchedProfile.genreFor("tv", 10749)) // no romance genre for series
+        assertNull(WatchedProfile.suggestionQuery(DiscoverQuery(), "tv", 10749))
+        val p = WatchedProfile.suggestionQuery(DiscoverQuery(minVotes = 50), "tv", 28)!!.params("tv", 1, "en-US")
+        assertEquals("10759", p["with_genres"]); assertEquals("6", p["vote_average.gte"])
+        assertEquals("300", p["vote_count.gte"]); assertEquals("popularity.desc", p["sort_by"])
+        // movies and series alternate, each title once
+        val mixed = WatchedProfile.mix(listOf(card("movie", 1, 8.0), card("movie", 2, 8.0)), listOf(card("tv", 1, 8.0), card("movie", 1, 8.0)), 3)
+        assertEquals(listOf("movie:1", "tv:1", "movie:2"), mixed.map { it.key })
+    }
+
+    @Test fun watchedGenresAreKeptOnTheDeviceAndErasedWithUserData() {
+        val store = MemoryStore()
+        assertTrue(Prefs(store).watchedGenres().isEmpty())
+        Prefs(store).setWatchedGenres(mapOf("movie:1" to listOf(28, 12), "tv:2" to listOf(35)))
+        assertEquals(mapOf("movie:1" to listOf(28, 12), "tv:2" to listOf(35)), Prefs(store).watchedGenres())
+        Prefs(store).clearUserData()
+        assertTrue(Prefs(store).watchedGenres().isEmpty())
     }
 
     @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {
