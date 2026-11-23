@@ -71,7 +71,7 @@ object TopLists {
 
     /** The same [DAILY_ACTORS] for everybody all day and different ones tomorrow: a shuffle seeded by the day. Best rated first. */
     fun dailyPick(pool: List<ActorEntry>, day: String): List<ActorEntry> {
-        val eligible = pool.filter { it.rating >= MIN_TOP_ACTOR_RATING }.sortedBy { it.id }
+        val eligible = pool.filter { it.rating >= MIN_TOP_ACTOR_RATING }.distinctBy { it.id }.sortedBy { it.id }
         val picked = eligible.shuffled(java.util.Random(day.hashCode().toLong())).take(DAILY_ACTORS)
         return picked.sortedByDescending { it.rating }
     }

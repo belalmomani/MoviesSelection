@@ -203,7 +203,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             val today = TopLists.today()
             val stored = c.prefs.cardPool(media)
             if (TopLists.cardPoolIsFresh(stored, today)) {
-                target.value = Load.Ok(stored?.cards.orEmpty())
+                target.value = Load.Ok(stored?.cards.orEmpty().distinctBy { it.key })
                 return@launch
             }
             target.value = Load.Loading
@@ -238,7 +238,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             val today = TopLists.today()
             val stored = c.prefs.actorPool()
             if (!force && TopLists.poolIsFresh(stored, today)) {
-                _actors.value = Load.Ok(stored?.actors.orEmpty())
+                _actors.value = Load.Ok(stored?.actors.orEmpty().distinctBy { it.id })
                 return@launch
             }
             _actors.value = Load.Loading
@@ -248,7 +248,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 Load.Ok(built)
             } catch (e: TmdbError) {
                 // The network failed: keep showing the last scan if there is one.
-                if (stored != null && stored.actors.isNotEmpty()) Load.Ok(stored.actors) else Load.Fail(e)
+                if (stored != null && stored.actors.isNotEmpty()) Load.Ok(stored.actors.distinctBy { it.id }) else Load.Fail(e)
             }
         }
     }
@@ -281,10 +281,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }.awaitAll().filterNotNull()
             }
-            found += rated
+            // The popular list shifts while we read it, so the same person can come on two pages: keep each once.
+            found += rated.filter { r -> found.none { it.id == r.id } }
             if (found.size >= POOL_TARGET) break
         }
-        return found
+        return found.distinctBy { it.id }
     }
 
     private companion object {
@@ -589,7 +590,7 @@ private fun ActorRowHeader(title: String, caption: String) {
 @Composable
 private fun ActorRow(list: List<ActorEntry>, onPerson: (Int) -> Unit) {
     LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(list, key = { it.id }) { actor ->
+        items(list.distinctBy { it.id }, key = { it.id }) { actor ->
             PersonCard(tr(actor.nameAr ?: actor.name, actor.name), actor.photo, actor.rating, onClick = { onPerson(actor.id) })
         }
     }

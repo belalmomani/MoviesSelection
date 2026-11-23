@@ -569,6 +569,14 @@ class DataLayerTest {
         assertTrue(TopLists.dailyPick(emptyList(), "2026-11-20").isEmpty())
     }
 
+    @Test fun theSameActorIsNeverListedTwice() {
+        // a duplicated id would crash a LazyRow ("Key was already used")
+        val pool = (1..12).map { actor(it, 8.0) } + listOf(actor(3, 8.0), actor(3, 8.1), actor(5, 8.0))
+        val picks = TopLists.dailyPick(pool, "2026-11-20")
+        assertEquals(picks.map { it.id }.distinct(), picks.map { it.id })
+        assertEquals(10, picks.size)
+    }
+
     @Test fun actorPoolIsReusedForAWeekAndStoredOnTheDevice() {
         val pool = ActorPool("2026-11-20", listOf(actor(1, 8.0)))
         assertTrue(TopLists.poolIsFresh(pool, "2026-11-20"))

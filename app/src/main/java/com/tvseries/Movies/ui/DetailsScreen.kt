@@ -281,7 +281,7 @@ fun DetailsScreen(
                         item {
                             SectionTitle(tr("الممثلون", "Cast"))
                             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                items(cast, key = { it.id }) { p ->
+                                items(cast.distinctBy { it.id }, key = { it.id }) { p ->
                                     Column(Modifier.width(84.dp).clickable { onPerson(p.id) }, horizontalAlignment = Alignment.CenterHorizontally) {
                                         PosterImage(Img.profile(p.profilePath), p.name, Modifier.size(72.dp).clip(CircleShape))
                                         Text(p.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
