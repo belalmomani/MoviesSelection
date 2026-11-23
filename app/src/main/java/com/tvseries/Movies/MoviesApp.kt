@@ -2,6 +2,7 @@ package com.tvseries.Movies
 
 import android.app.Application
 import android.content.Context
+import com.tvseries.Movies.ads.AdMoments
 import com.tvseries.Movies.ads.AdsModule
 import com.tvseries.Movies.ads.AdsProvider
 import com.tvseries.Movies.core.Selection
@@ -33,6 +34,7 @@ class AppContainer(app: Application) {
         { prefs.updateToken.value },
     )
     val ads: AdsProvider = AdsModule.provide(BuildConfig.START_IO_APP_ID)
+    val adMoments = AdMoments(prefs, ads, BuildConfig.ADS_ENABLED, BuildConfig.TV_AD_URL)
 
     /** A newer build published on GitHub (null = none / unknown). Drives the badge on the Settings tab. */
     val updateAvailable = MutableStateFlow<UpdateInfo?>(null)

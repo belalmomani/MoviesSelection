@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalContext
 import com.tvseries.Movies.reminder.ReminderScheduler
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -50,6 +52,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.tvseries.Movies.AppContainer
 import com.tvseries.Movies.BuildConfig
+import androidx.compose.ui.res.painterResource
 
 @Composable
 private fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -350,26 +353,39 @@ fun AboutScreen(onBack: () -> Unit) {
         )
         Text(
             tr(
-                "هذا المنتج يستخدم واجهة TMDB لكنه غير معتمد أو مصدّق من TMDB. جميع بيانات الأفلام والمسلسلات والصور مصدرها TMDB (themoviedb.org).",
-                "This product uses the TMDB API but is not endorsed or certified by TMDB. All movie/series data and images come from TMDB (themoviedb.org).",
+                "This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB. جميع بيانات الأفلام والمسلسلات والصور مصدرها TMDB (themoviedb.org).",
+                "This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB. All movie/series data and images come from TMDB (themoviedb.org).",
             ),
         )
+        // The official TMDB logo (from themoviedb.org/about/logos-attribution) shows here once a file named tmdb_logo is added to res/drawable.
+        val aboutContext = LocalContext.current
+        val tmdbLogo = remember { aboutContext.resources.getIdentifier("tmdb_logo", "drawable", aboutContext.packageName) }
+        if (tmdbLogo != 0) {
+            Image(painterResource(tmdbLogo), contentDescription = "TMDB", modifier = Modifier.height(18.dp))
+        }
         Text(
             tr(
                 "التصنيفات المشتقة (مثل «أنيمي ياباني» و«فيلم قصير» وفئات التقييم والمدة) محسوبة من حقول TMDB وهي تقديرية وليست تصنيفات رسمية.",
                 "Derived categories (e.g. Japanese anime, short film, rating/runtime bands) are computed from TMDB fields and are estimates, not official labels.",
             ),
         )
-        Text(
-            tr(
-                "الاستخدام التجاري يتطلب مراجعة شروط TMDB وترخيصها قبل النشر.",
-                "Commercial use requires reviewing TMDB's terms and licensing before publishing.",
-            ),
-        )
-        Text(
-            tr("الإعلانات: بانر في الرئيسية وصفحة العمل فقط، ولا يظهر أثناء التصفية أو الاختيار.", "Ads: a banner on Home and Details only; never while filtering or choosing."),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (BuildConfig.DEBUG) { // a note for test builds only: it must not reach store users
+            Text(
+                tr(
+                    "الاستخدام التجاري يتطلب مراجعة شروط TMDB وترخيصها قبل النشر.",
+                    "Commercial use requires reviewing TMDB's terms and licensing before publishing.",
+                ),
+            )
+        }
+        if (BuildConfig.ADS_ENABLED) {
+            Text(
+                tr(
+                    "الإعلانات: بانر في الرئيسية وصفحة العمل، وحتى 3 إعلانات ملء الشاشة يوميًا بعد مغادرة صفحة عمل. لا تظهر أثناء التصفية أو الاختيار.",
+                    "Ads: a banner on Home and Details, and up to 3 full-screen ads a day after leaving a Details page. Never while filtering or choosing.",
+                ),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         val aboutUri = androidx.compose.ui.platform.LocalUriHandler.current
         Text(
             tr(

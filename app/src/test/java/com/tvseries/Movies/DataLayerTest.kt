@@ -1,8 +1,10 @@
 package com.tvseries.Movies
 
+import com.tvseries.Movies.ads.AdCapState
 import com.tvseries.Movies.ads.AdPlacement
 import com.tvseries.Movies.ads.AdPolicy
 import com.tvseries.Movies.ads.AdsModule
+import com.tvseries.Movies.ads.DailyAdCap
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.core.Taxonomy
@@ -16,6 +18,10 @@ import com.tvseries.Movies.data.PersonDto
 import com.tvseries.Movies.data.PersonScore
 import com.tvseries.Movies.data.KeywordArabic
 import com.tvseries.Movies.data.NodeFactory
+import com.tvseries.Movies.data.ActorEntry
+import com.tvseries.Movies.data.ActorPool
+import com.tvseries.Movies.data.CardPool
+import com.tvseries.Movies.data.KnownForDto
 import com.tvseries.Movies.data.ServerRefine
 import com.tvseries.Movies.data.TopLists
 import com.tvseries.Movies.data.TaxonomySeed
@@ -510,6 +516,107 @@ class DataLayerTest {
         assertFalse(TopLists.isActor(ListItemDto(id = 0, name = "C", knownForDepartment = "Acting")))
         assertTrue(TopLists.actorPasses(7.0)); assertTrue(TopLists.actorPasses(8.4))
         assertFalse(TopLists.actorPasses(6.9)); assertFalse(TopLists.actorPasses(null))
+    }
+
+    @Test fun dailyAdCapAllowsThreeAdsADayWithGapsAndNotRightAfterLaunch() {
+        val day = "2026-11-20"
+        val t0 = 1_000_000_000L
+        val session = t0
+        // not in the first 90 seconds of a session
+        assertFalse(DailyAdCap.canShow(AdCapState(), day, t0 + 60_000, session))
+        assertTrue(DailyAdCap.canShow(AdCapState(), day, t0 + 120_000, session))
+        var st = DailyAdCap.record(AdCapState(), day, t0 + 120_000)
+        assertEquals(1, st.count)
+        // not within 20 minutes of the previous ad
+        assertFalse(DailyAdCap.canShow(st, day, t0 + 120_000 + 19 * 60_000, session))
+        assertTrue(DailyAdCap.canShow(st, day, t0 + 120_000 + 21 * 60_000, session))
+        st = DailyAdCap.record(st, day, t0 + 30 * 60_000)
+        st = DailyAdCap.record(st, day, t0 + 60 * 60_000)
+        assertEquals(3, st.count)
+        // the fourth is refused, however long ago the last one was
+        assertFalse(DailyAdCap.canShow(st, day, t0 + 10 * 60 * 60_000, session))
+        // a new day starts again from zero
+        assertTrue(DailyAdCap.canShow(st, "2026-11-21", t0 + 24 * 60 * 60_000, session))
+        assertEquals(1, DailyAdCap.record(st, "2026-11-21", t0 + 24 * 60 * 60_000).count)
+        // a clock set back never blocks forever
+        assertTrue(DailyAdCap.canShow(AdCapState(day, 1, t0 + 5 * 60 * 60_000), day, t0 + 200_000, session))
+    }
+
+    @Test fun adCapIsPersistedAndFullScreenAdsAreOnlyAllowedAfterDetails() {
+        val store = MemoryStore()
+        val p = Prefs(store)
+        assertEquals(AdCapState(), p.adCap())
+        p.setAdCap(AdCapState("2026-11-20", 2, 123L))
+        assertEquals(AdCapState("2026-11-20", 2, 123L), Prefs(store).adCap())
+        assertTrue(AdPolicy.allowed(AdPlacement.INTERSTITIAL_AFTER_DETAILS, userIsFiltering = false))
+        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_AFTER_DETAILS, userIsFiltering = true))
+        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = false))
+    }
+
+    private fun actor(id: Int, rating: Double) = ActorEntry(id = id, name = "A$id", rating = rating)
+
+    @Test fun dailyTopActorsAreTenRatedSevenPointFiveOrMoreAndChangeEveryDay() {
+        val pool = (1..40).map { actor(it, if (it <= 30) 7.5 + (it % 10) / 10.0 else 7.0) } // 30 eligible, 10 below the bar
+        val today = TopLists.dailyPick(pool, "2026-11-20")
+        assertEquals(10, today.size)
+        assertTrue(today.all { it.rating >= 7.5 })
+        assertEquals(today.map { it.rating }.sortedDescending(), today.map { it.rating }) // best rated first
+        // the same all day, different tomorrow
+        assertEquals(today, TopLists.dailyPick(pool, "2026-11-20"))
+        assertNotEquals(today.map { it.id }.toSet(), TopLists.dailyPick(pool, "2026-11-21").map { it.id }.toSet())
+        // fewer than ten eligible: show them all
+        assertEquals(3, TopLists.dailyPick(listOf(actor(1, 8.0), actor(2, 7.6), actor(3, 7.5), actor(4, 7.4)), "2026-11-20").size)
+        assertTrue(TopLists.dailyPick(emptyList(), "2026-11-20").isEmpty())
+    }
+
+    @Test fun actorPoolIsReusedForAWeekAndStoredOnTheDevice() {
+        val pool = ActorPool("2026-11-20", listOf(actor(1, 8.0)))
+        assertTrue(TopLists.poolIsFresh(pool, "2026-11-20"))
+        assertTrue(TopLists.poolIsFresh(pool, "2026-11-27"))
+        assertFalse(TopLists.poolIsFresh(pool, "2026-11-28"))
+        assertFalse(TopLists.poolIsFresh(pool, "2026-11-19")) // clock set back: scan again
+        assertFalse(TopLists.poolIsFresh(null, "2026-11-20"))
+        assertFalse(TopLists.poolIsFresh(ActorPool("2026-11-20", emptyList()), "2026-11-20"))
+        assertFalse(TopLists.poolIsFresh(ActorPool("not a date", listOf(actor(1, 8.0))), "2026-11-20"))
+        val store = MemoryStore()
+        assertNull(Prefs(store).actorPool())
+        Prefs(store).setActorPool(pool)
+        assertEquals(pool, Prefs(store).actorPool())
+    }
+
+    @Test fun cheapPrecheckDropsActorsKnownForClearlyLowRatedTitles() {
+        fun person(vararg ratings: Double) = ListItemDto(id = 1, name = "X", knownFor = ratings.map { KnownForDto(voteAverage = it, voteCount = 5000) })
+        assertTrue(TopLists.worthChecking(person(8.0, 7.5, 7.0)))
+        assertFalse(TopLists.worthChecking(person(6.0, 6.5, 5.9)))
+        assertTrue(TopLists.worthChecking(person(5.0))) // one title is too little to judge: check the person properly
+        assertTrue(TopLists.worthChecking(ListItemDto(id = 1, name = "X")))
+    }
+
+    private fun card(media: String, id: Int, rating: Double) = WorkCard(mediaType = media, id = id, title = "T$id", rating = rating)
+
+    @Test fun dailyTitlesAreTenRatedEightOrMoreAndChangeEveryDay() {
+        val pool = (1..60).map { card("movie", it, if (it <= 40) 8.0 + (it % 10) / 10.0 else 7.5) } // 40 eligible
+        val today = TopLists.dailyTitles(pool, "2026-11-20", "movie")
+        assertEquals(10, today.size)
+        assertTrue(today.all { (it.rating ?: 0.0) >= 8.0 })
+        assertEquals(today.map { it.rating }.sortedByDescending { it }, today.map { it.rating })
+        assertEquals(today, TopLists.dailyTitles(pool, "2026-11-20", "movie"))
+        assertNotEquals(today.map { it.key }.toSet(), TopLists.dailyTitles(pool, "2026-11-21", "movie").map { it.key }.toSet())
+        // the same card seen twice is listed once; fewer than ten eligible: show them all
+        assertEquals(2, TopLists.dailyTitles(listOf(card("tv", 1, 8.5), card("tv", 1, 8.5), card("tv", 2, 8.0), card("tv", 3, 7.9)), "2026-11-20", "tv").size)
+        assertTrue(TopLists.dailyTitles(emptyList(), "2026-11-20", "movie").isEmpty())
+    }
+
+    @Test fun titlePoolIsReusedForAWeekAndStoredPerKind() {
+        val pool = CardPool("2026-11-20", listOf(card("movie", 1, 8.2)))
+        assertTrue(TopLists.cardPoolIsFresh(pool, "2026-11-27"))
+        assertFalse(TopLists.cardPoolIsFresh(pool, "2026-11-28"))
+        assertFalse(TopLists.cardPoolIsFresh(null, "2026-11-20"))
+        assertFalse(TopLists.cardPoolIsFresh(CardPool("2026-11-20", emptyList()), "2026-11-20"))
+        val store = MemoryStore()
+        Prefs(store).setCardPool("movie", pool)
+        assertEquals(pool, Prefs(store).cardPool("movie"))
+        assertNull(Prefs(store).cardPool("tv")) // series have their own pool
     }
 
     @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {

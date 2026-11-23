@@ -14,6 +14,7 @@ val appConfig = Properties().apply {
 
 val adsEnabled = appConfig.getProperty("ADS_ENABLED")?.trim() == "true"
 val startIoAppId = (appConfig.getProperty("START_IO_APP_ID") ?: "").trim()
+val tvAdUrl = (appConfig.getProperty("TV_AD_URL") ?: "").trim()
 
 android {
     namespace = "com.tvseries.Movies"
@@ -43,6 +44,8 @@ android {
         buildConfigField("String", "UPDATE_REPO", "\"${(appConfig.getProperty("UPDATE_REPO") ?: "").trim()}\"")
         buildConfigField("String", "PRIVACY_URL", "\"${(appConfig.getProperty("PRIVACY_URL") ?: "").trim()}\"")
         buildConfigField("String", "START_IO_APP_ID", "\"${(appConfig.getProperty("START_IO_APP_ID") ?: "").trim()}\"")
+        // Sponsor page opened by the TV's QR code. Empty = no QR is ever shown.
+        buildConfigField("String", "TV_AD_URL", "\"${tvAdUrl}\"")
     }
 
     signingConfigs {
@@ -88,6 +91,9 @@ android {
         getByName("main") {
             java.srcDir(if (adsEnabled) "src/startio/java" else "src/noads/java")
         }
+        getByName("release") {
+            manifest.srcFile(if (adsEnabled) "src/release/AndroidManifest.xml" else "src/releaseNoAds/AndroidManifest.xml")
+        }
     }
 
     buildFeatures {
@@ -125,6 +131,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.google.zxing:core:3.5.3") // QR code for the TV sponsor page (pure Java, no permissions)
     if (adsEnabled) implementation("com.startapp:inapp-sdk:4.+")
 
     testImplementation("junit:junit:4.13.2")

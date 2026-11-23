@@ -12,6 +12,13 @@ data class PageDto(
 )
 
 /** One item of a list/search/credits response (movie, tv or person). Every field may be missing. */
+/** One of the few titles TMDB lists as "known for" on a person in a people list (only the rating fields are needed). */
+@Serializable
+data class KnownForDto(
+    @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("vote_count") val voteCount: Int? = null,
+)
+
 @Serializable
 data class ListItemDto(
     val id: Int = 0,
@@ -34,6 +41,7 @@ data class ListItemDto(
     val adult: Boolean? = null,
     @SerialName("media_type") val mediaType: String? = null,
     @SerialName("known_for_department") val knownForDepartment: String? = null,
+    @SerialName("known_for") val knownFor: List<KnownForDto>? = null,
     // credits-only fields
     val character: String? = null,
     val job: String? = null,

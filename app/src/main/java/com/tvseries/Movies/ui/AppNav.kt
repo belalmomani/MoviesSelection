@@ -53,6 +53,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.tvseries.Movies.AppContainer
+import com.tvseries.Movies.BuildConfig
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.WorkCard
 
@@ -169,6 +170,19 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
+    // A natural break = coming back from a Details page to a main tab: the only moment an ad may appear (capped per day).
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var showTvQr by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var lastRoute by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(current) {
+        val previous = lastRoute
+        lastRoute = current
+        if (previous?.startsWith("details") == true && current in tabs.map { it.route }) {
+            val kind = container.adMoments.onReturnFromDetails(context, isTelevisionDevice(context), userIsFiltering = current == Routes.FILTER)
+            if (kind == com.tvseries.Movies.ads.AdMoments.Kind.TV_QR) showTvQr = true
+        }
+    }
+    if (showTvQr) TvQrDialog(BuildConfig.TV_AD_URL) { showTvQr = false }
     val openCard: (WorkCard) -> Unit = { nav.navigate(Routes.details(it.mediaType, it.id)) }
     val openFilter: (Selection?) -> Unit = { sel ->
         if (sel != null) container.presetSelection = sel

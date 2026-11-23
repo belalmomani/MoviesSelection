@@ -50,6 +50,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.GemFinder
 import com.tvseries.Movies.data.ContentType
+import com.tvseries.Movies.data.ActorEntry
+import com.tvseries.Movies.data.ActorPool
+import com.tvseries.Movies.data.CardPool
 import com.tvseries.Movies.data.ListItemDto
 import com.tvseries.Movies.data.PersonScore
 import com.tvseries.Movies.data.TopLists
@@ -73,9 +76,6 @@ sealed interface Load<out T> {
     data class Ok<T>(val value: T) : Load<T>
     data class Fail(val error: TmdbError) : Load<Nothing>
 }
-
-/** A well-known actor for the Home row: [rating] is the average TMDB rating of their best-known titles. */
-class TopActor(val id: Int, val name: String, val nameAr: String?, val profilePath: String?, val rating: Double)
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val c = (app as MoviesApp).container
@@ -183,28 +183,85 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         return out.filter { (it.rating ?: 0.0) >= TopLists.MIN_TITLE_RATING }.distinctBy { it.key }
     }
 
-    private val _actors = MutableStateFlow<Load<List<TopActor>>>(Load.Loading)
-    val actors: StateFlow<Load<List<TopActor>>> = _actors.asStateFlow()
-    private var actorsJob: Job? = null
+    // ---- 10 movies and 10 series a day, rated 8 and above, picked from a pool kept on the device for a week ----
 
-    fun loadActors(force: Boolean = false) {
-        if (!force && (actorsJob?.isActive == true || _actors.value is Load.Ok)) return
-        actorsJob = viewModelScope.launch {
-            _actors.value = Load.Loading
-            _actors.value = try {
-                Load.Ok(fetchActors())
+    private val _dailyMovies = MutableStateFlow<Load<List<WorkCard>>>(Load.Loading)
+    val dailyMovies: StateFlow<Load<List<WorkCard>>> = _dailyMovies.asStateFlow()
+    private val _dailySeries = MutableStateFlow<Load<List<WorkCard>>>(Load.Loading)
+    val dailySeries: StateFlow<Load<List<WorkCard>>> = _dailySeries.asStateFlow()
+    private var dailyStarted = false
+
+    fun loadDaily(force: Boolean = false) {
+        if (dailyStarted && !force && _dailyMovies.value !is Load.Fail && _dailySeries.value !is Load.Fail) return
+        dailyStarted = true
+        loadDaily("movie", _dailyMovies)
+        loadDaily("tv", _dailySeries)
+    }
+
+    private fun loadDaily(media: String, target: MutableStateFlow<Load<List<WorkCard>>>) {
+        viewModelScope.launch {
+            val today = TopLists.today()
+            val stored = c.prefs.cardPool(media)
+            if (TopLists.cardPoolIsFresh(stored, today)) {
+                target.value = Load.Ok(stored?.cards.orEmpty())
+                return@launch
+            }
+            target.value = Load.Loading
+            target.value = try {
+                val built = fetchTitlePool(media)
+                if (built.isNotEmpty()) c.prefs.setCardPool(media, CardPool(today, built))
+                Load.Ok(built)
             } catch (e: TmdbError) {
-                Load.Fail(e)
+                // The network failed: keep showing the last scan if there is one.
+                if (stored != null && stored.cards.isNotEmpty()) Load.Ok(stored.cards) else Load.Fail(e)
             }
         }
     }
 
-    /** TMDB's most popular people, kept when they act and the average rating of their best-known titles is 7 or more. */
-    private suspend fun fetchActors(): List<TopActor> {
-        val found = ArrayList<TopActor>()
+    private suspend fun fetchTitlePool(media: String): List<WorkCard> {
+        val q = TopLists.titleQuery(c.repo.baseQuery(), media)
+        val out = ArrayList<WorkCard>()
+        for (page in 1..TITLE_POOL_PAGES) {
+            out += c.repo.discover(media, page, q).results.mapNotNull { it.toCard(media) }
+        }
+        return out.filter { (it.rating ?: 0.0) >= TopLists.MIN_TITLE_RATING }.distinctBy { it.key }
+    }
+
+    private val _actors = MutableStateFlow<Load<List<ActorEntry>>>(Load.Loading)
+    val actors: StateFlow<Load<List<ActorEntry>>> = _actors.asStateFlow()
+    private var actorsJob: Job? = null
+
+    /** Loads the actor pool: the copy kept on the device when it is under a week old, otherwise a fresh scan of TMDB. */
+    fun loadActors(force: Boolean = false) {
+        if (!force && (actorsJob?.isActive == true || _actors.value is Load.Ok)) return
+        actorsJob = viewModelScope.launch {
+            val today = TopLists.today()
+            val stored = c.prefs.actorPool()
+            if (!force && TopLists.poolIsFresh(stored, today)) {
+                _actors.value = Load.Ok(stored?.actors.orEmpty())
+                return@launch
+            }
+            _actors.value = Load.Loading
+            _actors.value = try {
+                val built = fetchActorPool()
+                if (built.isNotEmpty()) c.prefs.setActorPool(ActorPool(today, built))
+                Load.Ok(built)
+            } catch (e: TmdbError) {
+                // The network failed: keep showing the last scan if there is one.
+                if (stored != null && stored.actors.isNotEmpty()) Load.Ok(stored.actors) else Load.Fail(e)
+            }
+        }
+    }
+
+    /**
+     * TMDB's most popular people, kept when they act and the average rating of their best-known titles is 7 or more.
+     * Stops after [POOL_TARGET] actors or [POOL_PAGES] pages. A person whose request fails is skipped.
+     */
+    private suspend fun fetchActorPool(): List<ActorEntry> {
+        val found = ArrayList<ActorEntry>()
         val gate = Semaphore(ACTOR_PARALLEL)
-        for (page in 1..ACTOR_PAGES) {
-            val people = c.repo.list("person/popular", page).results.filter { TopLists.isActor(it) }
+        for (page in 1..POOL_PAGES) {
+            val people = c.repo.list("person/popular", page).results.filter { TopLists.isActor(it) && TopLists.worthChecking(it) }
             val rated = coroutineScope {
                 people.map { item ->
                     async {
@@ -213,7 +270,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                                 val p = c.repo.person(item.id)
                                 val r = PersonScore.forPerson(p, directing = false)
                                 if (TopLists.actorPasses(r)) {
-                                    TopActor(item.id, item.name.orEmpty(), PersonScore.arabicName(p.alsoKnownAs), item.profilePath, r ?: 0.0)
+                                    ActorEntry(item.id, item.name.orEmpty(), PersonScore.arabicName(p.alsoKnownAs), item.profilePath, r ?: 0.0)
                                 } else {
                                     null
                                 }
@@ -225,15 +282,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 }.awaitAll().filterNotNull()
             }
             found += rated
-            if (found.size >= ACTOR_TARGET) break
+            if (found.size >= POOL_TARGET) break
         }
-        return found.take(ACTOR_TARGET)
+        return found
     }
 
     private companion object {
         const val TOP8_PAGES = 2
-        const val ACTOR_PAGES = 3
-        const val ACTOR_TARGET = 20
+        const val TITLE_POOL_PAGES = 5
+        const val POOL_PAGES = 12
+        const val POOL_TARGET = 60
         const val ACTOR_PARALLEL = 4
     }
 
@@ -279,6 +337,7 @@ fun HomeScreen(
         vm.loadGems()
         vm.loadTop8()
         vm.loadActors()
+        vm.loadDaily()
     }
     val savedFilters by vm.savedFilters.collectAsState()
     val trending by vm.flow("trending").collectAsState()
@@ -438,21 +497,63 @@ fun HomeScreen(
                 }
             }
             item {
-                val people by vm.actors.collectAsState()
-                SectionTitle(tr("أشهر الممثلين (تقييم 7 فأعلى)", "Famous actors (rated 7 and above)"))
-                Text(
-                    tr("تقييم الممثل = متوسط تقييم أشهر أعماله على TMDB.", "An actor's rating = the average TMDB rating of their best-known titles."),
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                )
-                when (val a = people) {
-                    is Load.Loading -> CenterLoading()
-                    is Load.Fail -> ErrorBox(a.error, onRetry = { vm.loadActors(true) })
-                    is Load.Ok -> LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(a.value, key = { it.id }) { actor ->
-                            PersonCard(tr(actor.nameAr ?: actor.name, actor.name), actor.profilePath, actor.rating, onClick = { onPerson(actor.id) })
+                val pool by vm.actors.collectAsState()
+                val title = tr("أشهر الممثلين (تقييم 7 فأعلى)", "Famous actors (rated 7 and above)")
+                val caption = tr("تقييم الممثل = متوسط تقييم أشهر أعماله على TMDB.", "An actor's rating = the average TMDB rating of their best-known titles.")
+                when (val a = pool) {
+                    is Load.Loading -> {
+                        ActorRowHeader(title, caption)
+                        CenterLoading()
+                    }
+                    is Load.Fail -> {
+                        ActorRowHeader(title, caption)
+                        ErrorBox(a.error, onRetry = { vm.loadActors(true) })
+                    }
+                    is Load.Ok -> {
+                        val list = a.value.filter { it.rating >= TopLists.MIN_ACTOR_RATING }.take(20)
+                        if (list.isNotEmpty()) {
+                            ActorRowHeader(title, caption)
+                            ActorRow(list, onPerson)
                         }
                     }
+                }
+            }
+            item {
+                val pool by vm.actors.collectAsState()
+                val day = androidx.compose.runtime.remember { TopLists.today() }
+                val picks = when (val a = pool) {
+                    is Load.Ok -> TopLists.dailyPick(a.value, day)
+                    else -> emptyList()
+                }
+                if (picks.isNotEmpty()) {
+                    ActorRowHeader(
+                        tr("الممثلون الأعلى تقييمًا (10 كل يوم)", "Top-rated actors (10 a day)"),
+                        tr("10 ممثلين جدد كل يوم، تقييمهم 7.5 فأعلى (متوسط تقييم أشهر أعمالهم).", "10 new actors every day, rated 7.5 and above (the average rating of their best-known titles)."),
+                    )
+                    ActorRow(picks, onPerson)
+                }
+            }
+
+            if (type == "all" || type == "movie") {
+                item {
+                    val daily by vm.dailyMovies.collectAsState()
+                    DailyTitlesRow(
+                        daily, "movie",
+                        tr("أفلام اليوم الأعلى تقييمًا (10 كل يوم)", "Top-rated movies (10 a day)"),
+                        tr("10 أفلام جديدة كل يوم، تقييمها 8 فأعلى (بحد أدنى 1,500 صوت).", "10 new movies every day, rated 8 and above (at least 1,500 votes)."),
+                        onOpen, onRetry = { vm.loadDaily(true) },
+                    )
+                }
+            }
+            if (type == "all" || type == "tv") {
+                item {
+                    val daily by vm.dailySeries.collectAsState()
+                    DailyTitlesRow(
+                        daily, "tv",
+                        tr("مسلسلات اليوم الأعلى تقييمًا (10 كل يوم)", "Top-rated series (10 a day)"),
+                        tr("10 مسلسلات جديدة كل يوم، تقييمها 8 فأعلى (بحد أدنى 500 صوت).", "10 new series every day, rated 8 and above (at least 500 votes)."),
+                        onOpen, onRetry = { vm.loadDaily(true) },
+                    )
                 }
             }
 
@@ -472,5 +573,55 @@ fun HomeScreen(
             }
         }
         BannerSlot(ads, AdPlacement.HOME_BANNER)
+    }
+}
+
+@Composable
+private fun ActorRowHeader(title: String, caption: String) {
+    SectionTitle(title)
+    Text(
+        caption,
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun ActorRow(list: List<ActorEntry>, onPerson: (Int) -> Unit) {
+    LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(list, key = { it.id }) { actor ->
+            PersonCard(tr(actor.nameAr ?: actor.name, actor.name), actor.photo, actor.rating, onClick = { onPerson(actor.id) })
+        }
+    }
+}
+
+@Composable
+private fun DailyTitlesRow(
+    state: Load<List<WorkCard>>,
+    media: String,
+    title: String,
+    caption: String,
+    onOpen: (WorkCard) -> Unit,
+    onRetry: () -> Unit,
+) {
+    when (state) {
+        is Load.Loading -> {
+            ActorRowHeader(title, caption)
+            CenterLoading()
+        }
+        is Load.Fail -> {
+            ActorRowHeader(title, caption)
+            ErrorBox(state.error, onRetry = onRetry)
+        }
+        is Load.Ok -> {
+            val day = androidx.compose.runtime.remember { TopLists.today() }
+            val picks = TopLists.dailyTitles(state.value, day, media)
+            if (picks.isNotEmpty()) {
+                ActorRowHeader(title, caption)
+                LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(picks, key = { it.key }) { card -> PosterCard(card, onClick = { onOpen(card) }) }
+                }
+            }
+        }
     }
 }

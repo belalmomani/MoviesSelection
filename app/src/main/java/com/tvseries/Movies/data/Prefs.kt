@@ -7,6 +7,7 @@ import com.tvseries.Movies.core.UserIntent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.tvseries.Movies.ads.AdCapState
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -156,6 +157,32 @@ class Prefs(private val store: KeyValueStore) {
     fun setTvMode(v: String) { _tvMode.value = v; store.putString(K_TV_MODE, v) }
     fun setTvNav(v: Boolean) { _tvNav.value = v; store.putString(K_TV_NAV, v.toString()) }
 
+    fun actorPool(): ActorPool? =
+        runCatching { store.getString(K_ACTOR_POOL)?.let { json.decodeFromString(ActorPool.serializer(), it) } }.getOrNull()
+
+    fun setActorPool(p: ActorPool) {
+        store.putString(K_ACTOR_POOL, json.encodeToString(ActorPool.serializer(), p))
+    }
+
+    fun cardPool(media: String): CardPool? =
+        runCatching { store.getString(K_TITLE_POOL + media)?.let { json.decodeFromString(CardPool.serializer(), it) } }.getOrNull()
+
+    fun setCardPool(media: String, p: CardPool) {
+        store.putString(K_TITLE_POOL + media, json.encodeToString(CardPool.serializer(), p))
+    }
+
+    fun adCap(): AdCapState = AdCapState(
+        store.getString(K_AD_DAY) ?: "",
+        store.getString(K_AD_COUNT)?.toIntOrNull() ?: 0,
+        store.getString(K_AD_LAST)?.toLongOrNull() ?: 0L,
+    )
+
+    fun setAdCap(s: AdCapState) {
+        store.putString(K_AD_DAY, s.day)
+        store.putString(K_AD_COUNT, s.count.toString())
+        store.putString(K_AD_LAST, s.lastShownMs.toString())
+    }
+
     fun setContentType(v: String) { _contentType.value = v; store.putString(K_CONTENT, v) }
 
     fun setUpdateToken(v: String) { _updateToken.value = v.trim(); store.putString(K_UPDATE_TOKEN, v.trim()) }
@@ -261,6 +288,11 @@ class Prefs(private val store: KeyValueStore) {
         const val K_ADS_CONSENT = "ads_consent"
         const val K_TV_MODE = "tv_mode"
         const val K_TV_NAV = "tv_nav"
+        const val K_ACTOR_POOL = "actor_pool"
+        const val K_TITLE_POOL = "title_pool_"
+        const val K_AD_DAY = "ad_cap_day"
+        const val K_AD_COUNT = "ad_cap_count"
+        const val K_AD_LAST = "ad_cap_last"
         const val K_CONTENT = "content_type"
         const val K_UPDATE_TOKEN = "update_token"
         const val K_INTENT = "user_intent"

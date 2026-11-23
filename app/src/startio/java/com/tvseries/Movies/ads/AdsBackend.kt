@@ -32,6 +32,12 @@ class StartIoAdsProvider(private val appId: String) : AdsProvider {
         ready && AdPolicy.allowed(placement, userIsFiltering)
 
     override fun createBanner(context: Context): View? = Banner(context)
+
+    override fun showInterstitial(context: Context): Boolean {
+        if (!ready) return false
+        StartAppAd.showAd(context)
+        return true
+    }
 }
 
 object AdsBackend {
