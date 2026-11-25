@@ -2,9 +2,6 @@ package com.tvseries.Movies
 
 import android.app.Application
 import android.content.Context
-import com.tvseries.Movies.ads.AdMoments
-import com.tvseries.Movies.ads.AdsModule
-import com.tvseries.Movies.ads.AdsProvider
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.WorkCard
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,8 +30,6 @@ class AppContainer(app: Application) {
         BuildConfig.UPDATE_REPO,
         { prefs.updateToken.value },
     )
-    val ads: AdsProvider = AdsModule.provide(BuildConfig.START_IO_APP_ID)
-    val adMoments = AdMoments(prefs, ads, BuildConfig.ADS_ENABLED, BuildConfig.TV_AD_URL)
 
     /** A newer build published on GitHub (null = none / unknown). Drives the badge on the Settings tab. */
     val updateAvailable = MutableStateFlow<UpdateInfo?>(null)
@@ -85,8 +80,5 @@ class MoviesApp : Application() {
             previous?.uncaughtException(t, e)
         }
         container = AppContainer(this)
-        // Ads start only if the user already answered the consent screen (first run: MainActivity asks).
-        val consent = container.prefs.adsConsent.value
-        if (consent != "unset") runCatching { container.ads.initialize(this, consent == "yes") }
     }
 }

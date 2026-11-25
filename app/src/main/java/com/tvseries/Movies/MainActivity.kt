@@ -25,7 +25,6 @@ import androidx.compose.runtime.setValue
 import java.io.File
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
-import com.tvseries.Movies.ui.ConsentScreen
 import com.tvseries.Movies.ui.CrashScreen
 import com.tvseries.Movies.ui.LocalLang
 import com.tvseries.Movies.ui.MoviesRoot
@@ -80,7 +79,6 @@ class MainActivity : ComponentActivity() {
             val tvPref by container.prefs.tvMode.collectAsState()
             val tv = tvPref == "on" || (tvPref == "auto" && autoTv)
             val tvNav by container.prefs.tvNav.collectAsState()
-            val adsConsent by container.prefs.adsConsent.collectAsState()
             // Language changed in Settings: recreate so the new locale/layout direction is applied everywhere.
             LaunchedEffect(lang) { if (lang != startLang) recreate() }
             val dark = when (theme) {
@@ -105,11 +103,6 @@ class MainActivity : ComponentActivity() {
                         CrashScreen(c) {
                             runCatching { File(filesDir, CRASH_FILE).delete() }
                             crash = null
-                        }
-                    } else if (BuildConfig.ADS_ENABLED && !tv && adsConsent == "unset") {
-                        ConsentScreen { personalized ->
-                            container.prefs.setAdsConsent(if (personalized) "yes" else "no")
-                            runCatching { container.ads.initialize(applicationContext, personalized) }
                         }
                     } else {
                         if (tv) TvRoot(container) else MoviesRoot(container, pickFromWatchlist)

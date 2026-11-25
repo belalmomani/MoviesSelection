@@ -15,6 +15,3 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 -keepattributes JavascriptInterface
-# Ads SDK (only present when ADS_ENABLED=true)
--keep class com.startapp.** { *; }
--dontwarn com.startapp.**

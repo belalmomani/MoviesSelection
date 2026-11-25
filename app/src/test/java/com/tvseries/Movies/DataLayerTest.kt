@@ -1,10 +1,5 @@
 package com.tvseries.Movies
 
-import com.tvseries.Movies.ads.AdCapState
-import com.tvseries.Movies.ads.AdPlacement
-import com.tvseries.Movies.ads.AdPolicy
-import com.tvseries.Movies.ads.AdsModule
-import com.tvseries.Movies.ads.DailyAdCap
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.core.Taxonomy
@@ -277,16 +272,6 @@ class DataLayerTest {
         assertEquals("16", DiscoverQuery(withoutGenres = setOf(16)).params("tv", 1, "ar")["without_genres"])
     }
 
-    @Test fun adsConsentStartsUnsetAndIsRemembered() {
-        val store = MemoryStore()
-        val p = Prefs(store)
-        assertEquals("unset", p.adsConsent.value) // nothing ad-related may start before the user answers
-        p.setAdsConsent("no")
-        assertEquals("no", Prefs(store).adsConsent.value)
-        p.clearUserData() // erasing personal data does not silently re-grant or reset the consent choice
-        assertEquals("no", Prefs(store).adsConsent.value)
-    }
-
     @Test fun historyIsOffByDefault() {
         val p = Prefs(MemoryStore())
         p.addHistory("something")
@@ -519,41 +504,6 @@ class DataLayerTest {
         assertFalse(TopLists.actorPasses(6.9)); assertFalse(TopLists.actorPasses(null))
     }
 
-    @Test fun dailyAdCapAllowsThreeAdsADayWithGapsAndNotRightAfterLaunch() {
-        val day = "2026-11-20"
-        val t0 = 1_000_000_000L
-        val session = t0
-        // not in the first 90 seconds of a session
-        assertFalse(DailyAdCap.canShow(AdCapState(), day, t0 + 60_000, session))
-        assertTrue(DailyAdCap.canShow(AdCapState(), day, t0 + 120_000, session))
-        var st = DailyAdCap.record(AdCapState(), day, t0 + 120_000)
-        assertEquals(1, st.count)
-        // not within 20 minutes of the previous ad
-        assertFalse(DailyAdCap.canShow(st, day, t0 + 120_000 + 19 * 60_000, session))
-        assertTrue(DailyAdCap.canShow(st, day, t0 + 120_000 + 21 * 60_000, session))
-        st = DailyAdCap.record(st, day, t0 + 30 * 60_000)
-        st = DailyAdCap.record(st, day, t0 + 60 * 60_000)
-        assertEquals(3, st.count)
-        // the fourth is refused, however long ago the last one was
-        assertFalse(DailyAdCap.canShow(st, day, t0 + 10 * 60 * 60_000, session))
-        // a new day starts again from zero
-        assertTrue(DailyAdCap.canShow(st, "2026-11-21", t0 + 24 * 60 * 60_000, session))
-        assertEquals(1, DailyAdCap.record(st, "2026-11-21", t0 + 24 * 60 * 60_000).count)
-        // a clock set back never blocks forever
-        assertTrue(DailyAdCap.canShow(AdCapState(day, 1, t0 + 5 * 60 * 60_000), day, t0 + 200_000, session))
-    }
-
-    @Test fun adCapIsPersistedAndFullScreenAdsAreOnlyAllowedAfterDetails() {
-        val store = MemoryStore()
-        val p = Prefs(store)
-        assertEquals(AdCapState(), p.adCap())
-        p.setAdCap(AdCapState("2026-11-20", 2, 123L))
-        assertEquals(AdCapState("2026-11-20", 2, 123L), Prefs(store).adCap())
-        assertTrue(AdPolicy.allowed(AdPlacement.INTERSTITIAL_AFTER_DETAILS, userIsFiltering = false))
-        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_AFTER_DETAILS, userIsFiltering = true))
-        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = false))
-    }
-
     private fun actor(id: Int, rating: Double) = ActorEntry(id = id, name = "A$id", rating = rating)
 
     @Test fun dailyTopActorsAreTenRatedSevenPointFiveOrMoreAndChangeEveryDay() {
@@ -665,13 +615,6 @@ class DataLayerTest {
         assertEquals(mapOf("movie:1" to listOf(28, 12), "tv:2" to listOf(35)), Prefs(store).watchedGenres())
         Prefs(store).clearUserData()
         assertTrue(Prefs(store).watchedGenres().isEmpty())
-    }
-
-    @Test fun adsNeverShownWhileFilteringAndNoInterstitials() {
-        assertFalse(AdPolicy.allowed(AdPlacement.HOME_BANNER, userIsFiltering = true))
-        assertFalse(AdPolicy.allowed(AdPlacement.INTERSTITIAL_BETWEEN_SESSIONS, userIsFiltering = false))
-        assertTrue(AdPolicy.allowed(AdPlacement.HOME_BANNER, userIsFiltering = false))
-        assertTrue(AdPolicy.allowed(AdPlacement.DETAILS_BANNER, userIsFiltering = false))
     }
 
     @Test fun moodTensionAndKeywordDerivedTags() {

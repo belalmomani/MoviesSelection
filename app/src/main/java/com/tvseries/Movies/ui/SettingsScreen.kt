@@ -95,7 +95,6 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
     val hideWatched by p.hideWatched.collectAsState()
     val tvMode by p.tvMode.collectAsState()
     val tvNav by p.tvNav.collectAsState()
-    val adsConsent by p.adsConsent.collectAsState()
     val gateLite by p.gateLite.collectAsState()
     val holeAuto by p.holeAuto.collectAsState()
     val skipIntro by p.skipIntro.collectAsState()
@@ -193,18 +192,6 @@ fun SettingsScreen(container: AppContainer, onAbout: () -> Unit) {
         RadioRow("العربية", lang == "ar") { p.setLanguage("ar") }
         RadioRow("English", lang == "en") { p.setLanguage("en") }
         HorizontalDivider()
-
-        if (BuildConfig.ADS_ENABLED && adsConsent != "unset") {
-            Text(tr("الإعلانات والخصوصية", "Ads & privacy"), style = MaterialTheme.typography.titleSmall)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = adsConsent == "yes", onCheckedChange = {
-                    p.setAdsConsent(if (it) "yes" else "no")
-                    runCatching { container.ads.setPersonalized(ctx, it) }
-                })
-                Text(tr("السماح بإعلانات مخصصة لاهتماماتي (إيقافه يُبقي إعلانات عامة)", "Allow ads personalised to my interests (off = generic ads)"), Modifier.padding(start = 8.dp))
-            }
-            HorizontalDivider()
-        }
 
         Text(tr("واجهة التلفاز", "TV edition"), style = MaterialTheme.typography.titleSmall)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -353,8 +340,8 @@ fun AboutScreen(onBack: () -> Unit) {
         )
         Text(
             tr(
-                "This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB. جميع بيانات الأفلام والمسلسلات والصور مصدرها TMDB (themoviedb.org).",
-                "This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB. All movie/series data and images come from TMDB (themoviedb.org).",
+                "This product uses the TMDB API but is not endorsed or certified by TMDB. جميع بيانات الأفلام والمسلسلات والصور مصدرها TMDB (themoviedb.org).",
+                "This product uses the TMDB API but is not endorsed or certified by TMDB. All movie/series data and images come from TMDB (themoviedb.org).",
             ),
         )
         // The official TMDB logo (from themoviedb.org/about/logos-attribution) shows here once a file named tmdb_logo is added to res/drawable.
@@ -375,15 +362,6 @@ fun AboutScreen(onBack: () -> Unit) {
                     "الاستخدام التجاري يتطلب مراجعة شروط TMDB وترخيصها قبل النشر.",
                     "Commercial use requires reviewing TMDB's terms and licensing before publishing.",
                 ),
-            )
-        }
-        if (BuildConfig.ADS_ENABLED) {
-            Text(
-                tr(
-                    "الإعلانات: بانر في الرئيسية وصفحة العمل، وحتى 3 إعلانات ملء الشاشة يوميًا بعد مغادرة صفحة عمل. لا تظهر أثناء التصفية أو الاختيار.",
-                    "Ads: a banner on Home and Details, and up to 3 full-screen ads a day after leaving a Details page. Never while filtering or choosing.",
-                ),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         val aboutUri = androidx.compose.ui.platform.LocalUriHandler.current

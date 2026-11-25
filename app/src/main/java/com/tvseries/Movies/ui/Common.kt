@@ -39,8 +39,6 @@ import com.tvseries.Movies.core.Traits
 import com.tvseries.Movies.core.Work
 import android.view.View
 import androidx.compose.ui.viewinterop.AndroidView
-import com.tvseries.Movies.ads.AdPlacement
-import com.tvseries.Movies.ads.AdsProvider
 import com.tvseries.Movies.data.Img
 import com.tvseries.Movies.data.TmdbError
 import com.tvseries.Movies.data.WorkCard
@@ -173,16 +171,6 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(8.dp))
         Text(text, style = MaterialTheme.typography.titleMedium)
     }
-}
-
-/** Banner placed only on Home and Details (never on the filter screen). Renders nothing when ads are off. */
-@Composable
-fun BannerSlot(ads: AdsProvider, placement: AdPlacement) {
-    if (!ads.canShowAt(placement, userIsFiltering = false)) return
-    AndroidView(
-        factory = { ctx -> runCatching { ads.createBanner(ctx) }.getOrNull() ?: View(ctx) },
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
 
 @Composable

@@ -44,8 +44,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tvseries.Movies.MoviesApp
-import com.tvseries.Movies.ads.AdPlacement
-import com.tvseries.Movies.ads.AdsProvider
 import androidx.compose.foundation.layout.fillMaxSize
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.GemFinder
@@ -402,7 +400,6 @@ private class Feature(
 
 @Composable
 fun HomeScreen(
-    ads: AdsProvider,
     onMood: () -> Unit,
     onChoose: () -> Unit,
     onParty: () -> Unit,
@@ -663,7 +660,6 @@ fun HomeScreen(
                 }
             }
         }
-        BannerSlot(ads, AdPlacement.HOME_BANNER)
     }
 }
 

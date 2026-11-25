@@ -53,7 +53,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.tvseries.Movies.AppContainer
-import com.tvseries.Movies.BuildConfig
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.WorkCard
 
@@ -170,19 +169,6 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
-    // A natural break = coming back from a Details page to a main tab: the only moment an ad may appear (capped per day).
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var showTvQr by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    var lastRoute by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    androidx.compose.runtime.LaunchedEffect(current) {
-        val previous = lastRoute
-        lastRoute = current
-        if (previous?.startsWith("details") == true && current in tabs.map { it.route }) {
-            val kind = container.adMoments.onReturnFromDetails(context, isTelevisionDevice(context), userIsFiltering = current == Routes.FILTER)
-            if (kind == com.tvseries.Movies.ads.AdMoments.Kind.TV_QR) showTvQr = true
-        }
-    }
-    if (showTvQr) TvQrDialog(BuildConfig.TV_AD_URL) { showTvQr = false }
     val openCard: (WorkCard) -> Unit = { nav.navigate(Routes.details(it.mediaType, it.id)) }
     val openFilter: (Selection?) -> Unit = { sel ->
         if (sel != null) container.presetSelection = sel
@@ -226,7 +212,7 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding)) {
             composable(Routes.HOME) {
                 HomeScreen(
-                    ads = container.ads, onOpen = openCard, onSearch = { nav.goTab(Routes.SEARCH) },
+                    onOpen = openCard, onSearch = { nav.goTab(Routes.SEARCH) },
                     onFilter = openFilter, onMood = { nav.navigate(Routes.MOOD) }, onChoose = { nav.navigate(Routes.CHOOSE) },
                     onParty = { nav.navigate(Routes.PARTY) }, onTimeGate = { nav.navigate(Routes.TIMEGATE) },
                     onWeb = { t, i -> nav.navigate(Routes.web(t, i)) },
@@ -289,7 +275,7 @@ fun MoviesRoot(container: AppContainer, pickFromWatchlist: Boolean = false) {
                 val type = be.arguments?.getString("type") ?: "movie"
                 val id = be.arguments?.getInt("id") ?: 0
                 DetailsScreen(
-                    ads = container.ads, container = container, onWeb = { t, i -> nav.navigate(Routes.web(t, i)) }, onOpenCompare = { nav.navigate(Routes.COMPARE) }, media = type, id = id,
+                    container = container, onWeb = { t, i -> nav.navigate(Routes.web(t, i)) }, onOpenCompare = { nav.navigate(Routes.COMPARE) }, media = type, id = id,
                     onBack = { nav.popBackStack() },
                     onOpen = openCard,
                     onPerson = { nav.navigate(Routes.person(it)) },

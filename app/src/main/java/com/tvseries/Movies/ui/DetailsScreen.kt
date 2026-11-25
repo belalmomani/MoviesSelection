@@ -56,8 +56,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.tvseries.Movies.MoviesApp
-import com.tvseries.Movies.ads.AdPlacement
-import com.tvseries.Movies.ads.AdsProvider
 import com.tvseries.Movies.core.Axes
 import com.tvseries.Movies.core.Selection
 import com.tvseries.Movies.data.DetailsDto
@@ -109,7 +107,6 @@ class DetailsViewModel(app: Application) : AndroidViewModel(app) {
 
 @Composable
 fun DetailsScreen(
-    ads: AdsProvider,
     container: com.tvseries.Movies.AppContainer,
     onOpenCompare: () -> Unit,
     onWeb: (String, Int) -> Unit,
@@ -354,6 +351,5 @@ fun DetailsScreen(
                 }
             }
         }
-        BannerSlot(ads, AdPlacement.DETAILS_BANNER)
     }
 }
