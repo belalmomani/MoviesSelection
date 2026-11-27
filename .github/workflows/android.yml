@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       build_release:
-        description: "Also build the release APK (debug-signed, minified)"
+        description: "Also build the release APK + AAB (signed with your release key if the KEYSTORE_* secrets exist)"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -82,7 +82,32 @@ jobs:
         with:
           name: MoviesSelection-aab
           path: app/build/outputs/bundle/release/*.aab
-          if-no-files-found: warn
+          if-no-files-found: error
+
+      - name: Upload release APK (the one to publish on your site)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoviesSelection-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Where are my files?
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_release }}
+        run: |
+          {
+            echo "## Build outputs"
+            echo "- **MoviesSelection-release-apk**: the APK to put on your website."
+            echo "- **MoviesSelection-aab**: the bundle for Google Play (not needed for direct download)."
+            echo "- **MoviesSelection-apk**: debug + release APKs together (testing)."
+            if [ -z "${KEYSTORE_PATH:-}" ]; then
+              echo ""
+              echo "> **Warning:** no KEYSTORE_BASE64 secret was found, so these release files are signed with the TEST key. Do not publish them: run the 'Create release keystore' workflow first."
+            else
+              echo ""
+              echo "Signed with your release key."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
